@@ -1,15 +1,18 @@
 import { useState, useEffect, useMemo } from "react";
 import api from "../api/api";
+import LoadingScreen from "./LoadingScreen";
 
 function Transactions() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
 
   // Form state
   const [text, setText] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState("expense");
   const [category, setCategory] = useState("General");
+  const [customCategory, setCustomCategory] = useState("");
 
   // Filters
   const [search, setSearch] = useState("");
@@ -20,7 +23,10 @@ function Transactions() {
   // Edit modal
   const [editingTx, setEditingTx] = useState(null);
 
-  const categories = [
+  /* ============================
+     CATEGORY MANAGEMENT
+  ============================ */
+  const defaultCategories = [
     { name: "General", icon: "📝", color: "text-gray-400" },
     { name: "Food", icon: "🍔", color: "text-yellow-400" },
     { name: "Travel", icon: "✈️", color: "text-blue-400" },
@@ -29,6 +35,15 @@ function Transactions() {
     { name: "Entertainment", icon: "🎮", color: "text-purple-400" },
   ];
 
+  const [categories, setCategories] = useState(() => {
+    const saved = localStorage.getItem("custom_categories");
+    return saved ? JSON.parse(saved) : defaultCategories;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("custom_categories", JSON.stringify(categories));
+  }, [categories]);
+
   const getCategoryIcon = (name) =>
     categories.find((c) => c.name === name)?.icon || "📝";
 
@@ -36,7 +51,7 @@ function Transactions() {
     categories.find((c) => c.name === name)?.color || "text-gray-400";
 
   /* ============================
-     FETCH TRANSACTIONS
+     API OPERATIONS
   ============================ */
   const fetchTransactions = async () => {
     try {
@@ -53,37 +68,44 @@ function Transactions() {
     fetchTransactions();
   }, []);
 
-  /* ============================
-     ADD TRANSACTION
-  ============================ */
   const addTransaction = async () => {
     if (!text || !amount) return;
 
+    let finalCategory = category;
+    if (category === "Custom") {
+      if (!customCategory) return;
+      finalCategory = customCategory.trim();
+      
+      // Save for next time if it doesn't exist
+      if (!categories.find(c => c.name.toLowerCase() === finalCategory.toLowerCase())) {
+        setCategories(prev => [...prev, { name: finalCategory, icon: "✨", color: "text-indigo-400" }]);
+      }
+    }
+
     const payload = {
       title: text,
-      amount:
-        type === "expense"
-          ? -Math.abs(Number(amount))
-          : Math.abs(Number(amount)),
+      amount: type === "expense" ? -Math.abs(Number(amount)) : Math.abs(Number(amount)),
       type,
-      category,
+      category: finalCategory,
       date: new Date().toISOString(),
     };
 
     try {
+      setIsAdding(true);
       const res = await api.post("/transactions", payload);
       setTransactions((prev) => [res.data, ...prev]);
+      // Reset Form
       setText("");
       setAmount("");
       setCategory("General");
+      setCustomCategory("");
     } catch (err) {
       console.error("Add failed:", err);
+    } finally {
+      setIsAdding(false);
     }
   };
 
-  /* ============================
-     DELETE TRANSACTION
-  ============================ */
   const deleteTransaction = async (id) => {
     try {
       await api.delete(`/transactions/${id}`);
@@ -93,9 +115,6 @@ function Transactions() {
     }
   };
 
-  /* ============================
-     UPDATE TRANSACTION
-  ============================ */
   const saveEdit = async () => {
     try {
       await api.put(`/transactions/${editingTx.id}`, {
@@ -111,481 +130,207 @@ function Transactions() {
   };
 
   /* ============================
-     FILTER + SORT
+     COMPUTED DATA
   ============================ */
   const filteredTransactions = useMemo(() => {
     let data = [...transactions];
-
-    if (search)
-      data = data.filter((t) =>
-        t.title.toLowerCase().includes(search.toLowerCase())
-      );
-
-    if (filterType !== "all")
-      data = data.filter((t) => t.type === filterType);
-
-    if (filterCategory !== "all")
-      data = data.filter((t) => t.category === filterCategory);
-
-    if (sortBy === "amount")
-      data.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-    else
-      data.sort((a, b) => new Date(b.date) - new Date(a.date));
-
+    if (search) data = data.filter(t => t.title.toLowerCase().includes(search.toLowerCase()));
+    if (filterType !== "all") data = data.filter(t => t.type === filterType);
+    if (filterCategory !== "all") data = data.filter(t => t.category === filterCategory);
+    if (sortBy === "amount") data.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    else data.sort((a, b) => new Date(b.date) - new Date(a.date));
     return data;
   }, [transactions, search, filterType, filterCategory, sortBy]);
 
-  const formatINR = (amt) =>
-    amt.toLocaleString("en-IN", { style: "currency", currency: "INR" });
+  const formatINR = (amt) => amt.toLocaleString("en-IN", { style: "currency", currency: "INR" });
+  const totalIncome = filteredTransactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const totalExpense = Math.abs(filteredTransactions.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
 
-  const totalIncome = filteredTransactions
-    .filter((t) => t.amount > 0)
-    .reduce((s, t) => s + t.amount, 0);
+  if (loading) return <LoadingScreen message="Loading Financial Data..." />;
 
-  const totalExpense = Math.abs(
-    filteredTransactions
-      .filter((t) => t.amount < 0)
-      .reduce((s, t) => s + t.amount, 0)
-  );
-
-  /* ============================
-     UI (UNCHANGED)
-  ============================ */
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400">
-        Loading transactions...
-      </div>
-    );
-  }
-  // ============================
-  // UI
-  // ============================
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 relative overflow-hidden">
-      {/* Animated Background Elements */}
+      {/* Background Decor */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -left-20 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '700ms' }}></div>
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse delay-700"></div>
       </div>
-
-      {/* Grid Pattern Overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,black,transparent)]"></div>
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="inline-flex items-center gap-3 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full backdrop-blur-sm mb-4">
             <div className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></div>
-            <span className="text-sm text-indigo-300 font-medium">Transaction Management</span>
+            <span className="text-sm text-indigo-300 font-medium">Finance Reimagined</span>
           </div>
-          <h2 className="text-5xl font-bold text-white mb-2">Transactions</h2>
-          <p className="text-lg text-gray-400">
-            Track, filter, and manage your income & expenses
-          </p>
+          <h2 className="text-4xl sm:text-5xl font-bold text-white mb-2">Transactions</h2>
         </div>
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-          <div className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 hover:bg-white/[0.05] hover:border-blue-500/30 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/20">
-            <div className="absolute -top-px -right-px w-24 h-24 bg-gradient-to-br from-blue-500/20 to-transparent rounded-tr-2xl blur-xl"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-                  Total Transactions
-                </p>
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl flex items-center justify-center text-xl border border-blue-500/20 group-hover:scale-110 transition-transform">
-                  📊
-                </div>
-              </div>
-              <p className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                {filteredTransactions.length}
-              </p>
-            </div>
-          </div>
-
-          <div className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 hover:bg-white/[0.05] hover:border-green-500/30 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-green-500/20">
-            <div className="absolute -bottom-px -left-px w-24 h-24 bg-gradient-to-tr from-green-500/20 to-transparent rounded-bl-2xl blur-xl"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-                  Total Income
-                </p>
-                <div className="w-10 h-10 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl flex items-center justify-center text-xl border border-green-500/20 group-hover:scale-110 transition-transform">
-                  💰
-                </div>
-              </div>
-              <p className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
-                {formatINR(totalIncome)}
-              </p>
-            </div>
-          </div>
-
-          <div className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 hover:bg-white/[0.05] hover:border-red-500/30 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-red-500/20">
-            <div className="absolute -top-px -right-px w-24 h-24 bg-gradient-to-br from-red-500/20 to-transparent rounded-tr-2xl blur-xl"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-                  Total Expenses
-                </p>
-                <div className="w-10 h-10 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-xl flex items-center justify-center text-xl border border-red-500/20 group-hover:scale-110 transition-transform">
-                  💸
-                </div>
-              </div>
-              <p className="text-3xl font-bold bg-gradient-to-r from-red-400 to-rose-400 bg-clip-text text-transparent">
-                {formatINR(totalExpense)}
-              </p>
-            </div>
-          </div>
+          <StatCard title="Total Volume" value={filteredTransactions.length} icon="📊" color="blue" />
+          <StatCard title="Total Income" value={formatINR(totalIncome)} icon="💰" color="green" />
+          <StatCard title="Total Expense" value={formatINR(totalExpense)} icon="💸" color="red" />
         </div>
 
-        {/* ADD TRANSACTION */}
-        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 mb-8 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all duration-300">
-          <div className="absolute -top-px -right-px w-32 h-32 bg-gradient-to-br from-indigo-500/20 to-transparent rounded-tr-3xl blur-2xl"></div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-xl flex items-center justify-center text-xl border border-indigo-500/20">
-                ➕
-              </div>
-              <h3 className="text-2xl font-bold text-white">Add New Transaction</h3>
-            </div>
+        {/* ADD TRANSACTION FORM */}
+        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-6 sm:p-8 mb-8">
+          <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+            <span className="p-2 bg-indigo-500/20 rounded-lg">➕</span> Add New Transaction
+          </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div>
-                <label className="text-sm font-medium text-gray-300 mb-2 block">
-                  Description
-                </label>
-                <input
-                  placeholder="Enter description..."
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-indigo-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-300 mb-2 block">
-                  Amount
-                </label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-indigo-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-300 mb-2 block">
-                  Type
-                </label>
-                <select 
-                  value={type} 
-                  onChange={(e) => setType(e.target.value)} 
-                  className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-indigo-500/20"
-                >
-                  <option value="income">💰 Income</option>
-                  <option value="expense">💸 Expense</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-300 mb-2 block">
-                  Category
-                </label>
-                <select 
-                  value={category} 
-                  onChange={(e) => setCategory(e.target.value)} 
-                  className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-indigo-500/20"
-                >
-                  {categories.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.icon} {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <button
-              onClick={addTransaction}
-              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold py-3.5 rounded-xl transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40"
-            >
-              <span className="flex items-center justify-center gap-2">
-                ➕ Add Transaction
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* FILTERS */}
-        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 mb-8 hover:bg-white/[0.05] transition-all duration-300">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl flex items-center justify-center text-xl border border-purple-500/20">
-              🔍
-            </div>
-            <h3 className="text-2xl font-bold text-white">Filters & Search</h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-300 mb-2 block">
-                Search
-              </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-400 ml-1">Description</label>
               <input 
-                placeholder="Search transactions..." 
-                value={search} 
-                onChange={(e) => setSearch(e.target.value)} 
-                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-purple-500/50 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-purple-500/20"
+                placeholder="What for?" 
+                value={text} 
+                onChange={(e) => setText(e.target.value)} 
+                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all"
               />
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-300 mb-2 block">
-                Type Filter
-              </label>
-              <select 
-                value={filterType} 
-                onChange={(e) => setFilterType(e.target.value)} 
-                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-purple-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-purple-500/20"
-              >
-                <option value="all">All Types</option>
-                <option value="income">💰 Income Only</option>
-                <option value="expense">💸 Expense Only</option>
-              </select>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-400 ml-1">Amount</label>
+              <input 
+                type="number" 
+                placeholder="0.00" 
+                value={amount} 
+                onChange={(e) => setAmount(e.target.value)} 
+                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all"
+              />
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-300 mb-2 block">
-                Category Filter
-              </label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-400 ml-1">Type</label>
+              <div className="relative flex p-1 bg-white/[0.05] border border-white/[0.1] rounded-xl h-[50px]">
+                <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] transition-all duration-300 rounded-lg ${type === 'income' ? 'left-1 bg-green-500/20 border border-green-500/30' : 'left-[calc(50%+1px)] bg-red-500/20 border border-red-500/30'}`} />
+                <button onClick={() => setType('income')} className={`relative z-10 flex-1 text-sm font-bold transition-colors ${type === 'income' ? 'text-green-400' : 'text-gray-500'}`}>Income</button>
+                <button onClick={() => setType('expense')} className={`relative z-10 flex-1 text-sm font-bold transition-colors ${type === 'expense' ? 'text-red-400' : 'text-gray-500'}`}>Expense</button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-400 ml-1">Category</label>
               <select 
-                value={filterCategory} 
-                onChange={(e) => setFilterCategory(e.target.value)} 
-                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-purple-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-purple-500/20"
+                value={category} 
+                onChange={(e) => setCategory(e.target.value)} 
+                className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none appearance-none"
               >
-                <option value="all">All Categories</option>
                 {categories.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.icon} {c.name}
-                  </option>
+                  <option key={c.name} value={c.name} className="bg-slate-900">{c.icon} {c.name}</option>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-300 mb-2 block">
-                Sort By
-              </label>
-              <select 
-                value={sortBy} 
-                onChange={(e) => setSortBy(e.target.value)} 
-                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-purple-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-purple-500/20"
-              >
-                <option value="date">📅 Latest First</option>
-                <option value="amount">💵 Highest Amount</option>
+                <option value="Custom" className="bg-slate-900">✨ Custom...</option>
               </select>
             </div>
           </div>
-        </div>
 
-        {/* TRANSACTIONS LIST HEADER */}
-<div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-  <h3 className="text-xl font-semibold text-white">
-    {filteredTransactions.length} Transaction{filteredTransactions.length !== 1 ? 's' : ''}
-  </h3>
-  {(search || filterType !== "all" || filterCategory !== "all") && (
-    <button
-      onClick={() => {
-        setSearch("");
-        setFilterType("all");
-        setFilterCategory("all");
-      }}
-      className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors font-medium w-fit"
-    >
-      ✕ Clear Filters
-    </button>
-  )}
-</div>
-
-{filteredTransactions.length === 0 ? (
-  <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-10 sm:p-20 text-center">
-    <div className="text-5xl sm:text-6xl mb-4 opacity-30">📭</div>
-    <p className="text-gray-300 text-lg sm:text-xl mb-2">No transactions found</p>
-    <p className="text-gray-500 text-sm">
-      {search || filterType !== "all" || filterCategory !== "all"
-        ? "Try adjusting your filters"
-        : "Start by adding your first transaction above"}
-    </p>
-  </div>
-) : (
-  <div className="space-y-4">
-    {filteredTransactions.map((t) => (
-      <div className="space-y-4">
-  {filteredTransactions.map((t) => (
-    <div
-      key={t.id}
-      className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-4 sm:p-6 transition-all duration-300 overflow-hidden"
-    >
-      {/* Background Glow */}
-      <div className={`absolute -top-px -right-px w-16 h-16 blur-xl opacity-20 ${t.amount > 0 ? "bg-green-500" : "bg-red-500"}`}></div>
-      
-      <div className="relative z-10 flex flex-col gap-4">
-        {/* Top Row: Icon and Title */}
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 shrink-0 bg-white/[0.05] border border-white/[0.1] rounded-xl flex items-center justify-center text-xl">
-            {getCategoryIcon(t.category)}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <p className="font-bold text-white text-base sm:text-lg truncate max-w-[140px] sm:max-w-none">
-                {t.title}
-              </p>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold uppercase tracking-tighter ${
-                t.amount > 0 ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-red-500/10 border-red-500/30 text-red-400"
-              }`}>
-                {t.type}
-              </span>
+          {category === "Custom" && (
+            <div className="mb-6 animate-in slide-in-from-top-2">
+              <label className="text-sm font-medium text-indigo-400 mb-2 block">Custom Category Name</label>
+              <input
+                placeholder="e.g. Health, Gym..."
+                value={customCategory}
+                onChange={(e) => setCustomCategory(e.target.value)}
+                className="w-full sm:w-1/2 bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3 text-white outline-none"
+              />
             </div>
-            <p className="text-[10px] sm:text-xs text-gray-500 flex items-center gap-2">
-              <span>📅 {new Date(t.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
-              <span>•</span>
-              <span>{t.category}</span>
-            </p>
-          </div>
-        </div>
+          )}
 
-        {/* Bottom Row: Amount and Buttons (Responsive Flex) */}
-        <div className="flex items-center justify-between pt-3 border-t border-white/[0.05]">
-          <div className={`text-xl sm:text-2xl font-bold ${
-            t.amount > 0 ? "text-green-400" : "text-red-400"
-          }`}>
-            {t.amount > 0 ? "+" : ""}{formatINR(t.amount)}
-          </div>
-          
-          <div className="flex gap-2">
-            <button
-              onClick={() => setEditingTx(t)}
-              className="p-2 sm:px-4 sm:py-2 bg-indigo-500/10 text-indigo-400 rounded-lg text-xs font-medium border border-indigo-500/20"
-            >
-              ✏️ <span className="hidden sm:inline ml-1">Edit</span>
-            </button>
-            <button
-              onClick={() => deleteTransaction(t.id)}
-              className="p-2 sm:px-4 sm:py-2 bg-red-500/10 text-red-400 rounded-lg text-xs font-medium border border-red-500/20"
-            >
-              🗑️ <span className="hidden sm:inline ml-1">Delete</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  ))}
-</div>
-    ))}
-  </div>
-)}
-
-        {/* EDIT MODAL */}
-        {editingTx && (
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => setEditingTx(null)}
+          <button
+            onClick={addTransaction}
+            disabled={isAdding}
+            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-indigo-500/20"
           >
-            <div
-              className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 w-full max-w-md shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute -top-px -right-px w-32 h-32 bg-gradient-to-br from-indigo-500/20 to-transparent rounded-tr-3xl blur-2xl"></div>
-              
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-2xl font-bold text-white">Edit Transaction</h3>
-                  <button
-                    onClick={() => setEditingTx(null)}
-                    className="text-gray-400 hover:text-white text-2xl transition-colors"
-                  >
-                    ✕
-                  </button>
+            {isAdding ? "Adding Transaction..." : "Confirm Transaction"}
+          </button>
+        </div>
+
+        {/* FILTERS SECTION */}
+        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-6 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none" />
+            <select value={filterType} onChange={e => setFilterType(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none">
+              <option value="all">All Types</option>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+            </select>
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none">
+              <option value="all">All Categories</option>
+              {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none">
+              <option value="date">Latest First</option>
+              <option value="amount">Highest Amount</option>
+            </select>
+          </div>
+        </div>
+
+        {/* TRANSACTION LIST */}
+        <div className="space-y-4">
+          {filteredTransactions.map((t) => (
+            <div key={t.id} className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-4 sm:p-6 transition-all hover:bg-white/[0.05]">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white/[0.05] rounded-xl flex items-center justify-center text-xl">{getCategoryIcon(t.category)}</div>
+                  <div>
+                    <h4 className="text-white font-bold text-lg">{t.title}</h4>
+                    <p className="text-sm text-gray-500">{new Date(t.date).toLocaleDateString()} • {t.category}</p>
+                  </div>
                 </div>
-
-                <div className="space-y-5">
-                  <div>
-                    <label className="text-sm font-medium text-gray-300 mb-2 block">
-                      Description
-                    </label>
-                    <input
-                      value={editingTx.title}
-                      onChange={(e) =>
-                        setEditingTx({ ...editingTx, title: e.target.value })
-                      }
-                      className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-indigo-500/20"
-                    />
+                <div className="flex items-center justify-between w-full sm:w-auto gap-6">
+                  <div className={`text-xl font-bold ${t.amount > 0 ? "text-green-400" : "text-red-400"}`}>
+                    {t.amount > 0 ? "+" : ""}{formatINR(t.amount)}
                   </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-300 mb-2 block">
-                      Amount
-                    </label>
-                    <input
-                      type="number"
-                      value={Math.abs(editingTx.amount)}
-                      onChange={(e) =>
-                        setEditingTx({
-                          ...editingTx,
-                          amount:
-                            editingTx.type === "expense"
-                              ? -Math.abs(Number(e.target.value))
-                              : Math.abs(Number(e.target.value)),
-                        })
-                      }
-                      className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-indigo-500/20"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-300 mb-2 block">
-                      Category
-                    </label>
-                    <select
-                      value={editingTx.category}
-                      onChange={(e) =>
-                        setEditingTx({ ...editingTx, category: e.target.value })
-                      }
-                      className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] focus:shadow-lg focus:shadow-indigo-500/20"
-                    >
-                      {categories.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.icon} {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      onClick={saveEdit}
-                      className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold py-3.5 rounded-xl transition-all duration-300 hover::scale-[1.02] shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40"
-                    >
-                      💾 Save Changes
-                    </button>
-
-                    <button
-                      onClick={() => setEditingTx(null)}
-                      className="flex-1 bg-white/[0.05] hover:bg-white/[0.08] text-gray-300 font-semibold py-3.5 rounded-xl transition-all duration-300 border border-white/[0.1]"
-                    >
-                      Cancel
-                    </button>
+                  <div className="flex gap-2">
+                    <button onClick={() => setEditingTx(t)} className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg hover:bg-indigo-500/20 transition-colors">✏️</button>
+                    <button onClick={() => deleteTransaction(t.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors">🗑️</button>
                   </div>
                 </div>
               </div>
             </div>
+          ))}
+          {filteredTransactions.length === 0 && (
+            <div className="text-center py-20 bg-white/[0.02] rounded-3xl border border-dashed border-white/10 text-gray-500">
+              No transactions found matching your filters.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* EDIT MODAL (KEEPING YOUR LOGIC) */}
+      {editingTx && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setEditingTx(null)}>
+          <div className="bg-[#0f172a] border border-white/10 rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-2xl font-bold text-white mb-6">Edit Record</h3>
+            <div className="space-y-4">
+              <input value={editingTx.title} onChange={e => setEditingTx({...editingTx, title: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none" />
+              <input type="number" value={Math.abs(editingTx.amount)} onChange={e => setEditingTx({...editingTx, amount: editingTx.type === 'expense' ? -Number(e.target.value) : Number(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none" />
+              <button onClick={saveEdit} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-500 transition-all">Save Changes</button>
+            </div>
           </div>
-        )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Sub-component for clean code
+function StatCard({ title, value, icon, color }) {
+  const colors = {
+    blue: "border-blue-500/20 from-blue-500/10",
+    green: "border-green-500/20 from-green-500/10",
+    red: "border-red-500/20 from-red-500/10"
+  };
+  return (
+    <div className={`relative bg-white/[0.03] border ${colors[color]} rounded-2xl p-6 overflow-hidden`}>
+      <div className={`absolute -right-4 -top-4 w-20 h-20 bg-gradient-to-br ${colors[color]} blur-2xl opacity-50`}></div>
+      <div className="relative flex justify-between items-center">
+        <div>
+          <p className="text-xs text-gray-500 uppercase font-bold mb-1">{title}</p>
+          <p className="text-2xl font-bold text-white">{value}</p>
+        </div>
+        <div className="text-3xl">{icon}</div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../api/api";
+import LoadingScreen from "./LoadingScreen";
 
 function BudgetGoals({ budget, setBudget, goal, setGoal }) {
   const [newBudget, setNewBudget] = useState("");
@@ -77,9 +78,7 @@ function BudgetGoals({ budget, setBudget, goal, setGoal }) {
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center text-gray-400">
-        Loading budget details...
-      </div>
+      <LoadingScreen message="Loading your budget and goals..." />
     );
   }
 

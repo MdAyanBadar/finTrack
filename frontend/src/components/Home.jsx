@@ -1,4 +1,5 @@
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import {
   PieChart,
   Pie,
@@ -11,8 +12,58 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
+import { X } from "lucide-react";
+
+// Mock API for demonstration
+import api from "../api/api";
 import Insights from "./Insights";
-function Home({ budget = 50000, goal = 20000, transactions = [] }) {
+import LoadingScreen from "./LoadingScreen";
+import NotificationBar from "./NotificationBar";
+import CategoryAnalysis from "./CategoryAnalysis";
+import CashFlowAnalysis from "./CashFlowAnalysis";
+
+function Home() {
+  /* =========================
+     STATE (BACKEND SOURCE)
+  ========================= */
+  const [transactions, setTransactions] = useState([]);
+  const [budget, setBudget] = useState(0);
+  const [goal, setGoal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+
+  /* =========================
+     FETCH DASHBOARD DATA
+  ========================= */
+  useEffect(() => {
+  const fetchDashboard = async () => {
+    try {
+      const [txRes, budgetRes] = await Promise.all([
+        api.get("/transactions"),
+        api.get("/budget"),
+      ]);
+
+      setTransactions(txRes.data || []);
+      setBudget(budgetRes.data?.monthlyBudget ?? 0);
+      setGoal(budgetRes.data?.savingsGoal ?? 0);
+    } catch (err) {
+      console.error("Dashboard fetch failed", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchDashboard();
+}, []);
+
+
+  if (loading) {
+    return (
+      <LoadingScreen message="Preparing your dashboard..." />
+    );
+  }
+
   /* =========================
      CALCULATIONS
   ========================= */
@@ -99,32 +150,55 @@ function Home({ budget = 50000, goal = 20000, transactions = [] }) {
   const monthlyChartData = Object.values(monthlyData);
 
   /* =========================
-     PIE TOOLTIP
+     CALENDAR DATA
   ========================= */
+  const getDaysInMonth = (date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+    
+    return { daysInMonth, startingDayOfWeek };
+  };
+
+  const getSpendingForDay = (day) => {
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayTransactions = transactions.filter(
+      t => t.date?.startsWith(dateStr) && t.amount < 0
+    );
+    const totalSpent = dayTransactions.reduce((acc, t) => acc + Math.abs(t.amount), 0);
+    return { totalSpent, transactions: dayTransactions };
+  };
+
+  const { daysInMonth: totalDays, startingDayOfWeek } = getDaysInMonth(now);
+  const calendarDays = Array.from({ length: totalDays }, (_, i) => i + 1);
+  const emptyDays = Array.from({ length: startingDayOfWeek }, (_, i) => i);
+
+  const handleDayClick = (day) => {
+    const { totalSpent, transactions: dayTransactions } = getSpendingForDay(day);
+    if (dayTransactions.length > 0) {
+      setSelectedDay({ day, totalSpent, transactions: dayTransactions });
+      setShowModal(true);
+    }
+  };
+
+  const COLORS = [
+    "#6366F1", "#F59E0B", "#10B981", "#EF4444",
+    "#8B5CF6", "#EC4899", "#06B6D4", "#F97316",
+  ];
+
   function CustomPieTooltip({ active, payload }) {
     if (!active || !payload?.length) return null;
     const { name, value } = payload[0];
 
     return (
       <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.1] rounded-xl p-4 text-sm shadow-2xl">
-        <div className="flex items-center gap-2 mb-2">
-          <div 
-            className="w-3 h-3 rounded-full" 
-            style={{ backgroundColor: payload[0].payload.fill }}
-          />
-          <p className="font-bold text-white">{name}</p>
-        </div>
-        <p className="text-white font-bold text-lg mb-1">
-          {formatINR(value)}
+        <p className="font-bold text-white">{name}</p>
+        <p className="text-white font-bold text-lg">
+          ₹{value.toLocaleString("en-IN")}
         </p>
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-gray-400 text-xs">
-            {((value / totalExpenseValue) * 100).toFixed(1)}% of total
-          </p>
-          <div className="px-2 py-0.5 bg-white/[0.05] rounded text-xs text-gray-300">
-            Rank #{chartData.findIndex(item => item.name === name) + 1}
-          </div>
-        </div>
       </div>
     );
   }
@@ -133,56 +207,22 @@ function Home({ budget = 50000, goal = 20000, transactions = [] }) {
     if (!active || !payload?.length) return null;
 
     return (
-      <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.1] rounded-xl p-4 shadow-2xl min-w-[200px]">
-        <p className="font-bold text-white mb-3 text-sm uppercase tracking-wide">
-          {payload[0].payload.month}
-        </p>
-        <div className="space-y-2">
-          {payload.map((entry, index) => (
-            <div key={index} className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full" 
-                  style={{ backgroundColor: entry.fill }}
-                />
-                <span className="text-gray-300 text-sm capitalize">{entry.dataKey}</span>
-              </div>
-              <span className="font-bold text-white text-sm">
-                {formatINR(entry.value)}
-              </span>
-            </div>
-          ))}
-        </div>
-        {payload.length === 2 && (
-          <div className="mt-3 pt-3 border-t border-white/[0.1]">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-400 text-xs">Net</span>
-              <span 
-                className={`font-bold text-sm ${
-                  payload[0].value - payload[1].value >= 0 
-                    ? 'text-green-400' 
-                    : 'text-red-400'
-                }`}
-              >
-                {formatINR(payload[0].value - payload[1].value)}
-              </span>
-            </div>
-          </div>
-        )}
+      <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.1] rounded-xl p-4 shadow-2xl">
+        {payload.map((p, i) => (
+          <p key={i} className="text-white text-sm">
+            {p.dataKey}: ₹{p.value.toLocaleString("en-IN")}
+          </p>
+        ))}
       </div>
     );
   }
-
-  const COLORS = [
-    "#6366F1", "#F59E0B", "#10B981", "#EF4444",
-    "#8B5CF6", "#EC4899", "#06B6D4", "#F97316",
-  ];
 
   /* =========================
      UI
   ========================= */
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 relative overflow-hidden">
+
       {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -left-20 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse"></div>
@@ -192,8 +232,18 @@ function Home({ budget = 50000, goal = 20000, transactions = [] }) {
 
       {/* Grid Pattern Overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,black,transparent)]"></div>
-
+    
       <div className="relative z-10 max-w-7xl mx-auto px-4 py-8">
+        <div className="relative z-30 max-w-7xl mx-auto px-4 pt-6">
+    <NotificationBar
+      budget={budget}
+      goal={goal}
+      income={totalIncome}
+      expenses={Math.abs(totalSpent)}
+      savings={savings}
+      transactions={transactions}
+    />
+  </div>
         {/* Header */}
         <div className="mb-8">
           <div className="inline-flex items-center gap-3 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full backdrop-blur-sm mb-4">
@@ -300,201 +350,185 @@ function Home({ budget = 50000, goal = 20000, transactions = [] }) {
           ))}
         </div>
 
-        {/* PIE CHART */}
-        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 mb-8 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all duration-300 overflow-hidden">
-          <div className="absolute -top-px -right-px w-40 h-40 bg-gradient-to-br from-indigo-500/20 to-transparent rounded-tr-3xl blur-2xl"></div>
+        {/* CALENDAR */}
+        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 mb-8 hover:bg-white/[0.05] hover:border-purple-500/30 transition-all duration-300 overflow-hidden">
+          <div className="absolute -top-px -left-px w-40 h-40 bg-gradient-to-br from-purple-500/20 to-transparent rounded-tl-3xl blur-2xl"></div>
           
           <div className="relative z-10">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-white mb-1">
-                  Expenses by Category
+                  Daily Spending Calendar
                 </h2>
-                <p className="text-sm text-gray-400">Visual breakdown of your spending patterns</p>
+                <p className="text-sm text-gray-400">Click on any day to view detailed transactions</p>
               </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-xl flex items-center justify-center text-2xl border border-indigo-500/20">
-                📊
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl flex items-center justify-center text-2xl border border-purple-500/20">
+                📅
               </div>
             </div>
 
-            {chartData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-6xl mb-4 opacity-30">📭</div>
-                <p className="text-gray-400 text-lg">No expenses recorded yet</p>
-                <p className="text-gray-500 text-sm mt-2">Start adding transactions to see your spending breakdown</p>
+            <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/[0.05]">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-semibold text-white">
+                  {now.toLocaleString('en-IN', { month: 'long', year: 'numeric' })}
+                </h3>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 h-80 relative">
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        dataKey="value"
-                        innerRadius={75}
-                        outerRadius={115}
-                        paddingAngle={3}
-                        animationBegin={0}
-                        animationDuration={800}
-                      >
-                        {chartData.map((_, i) => (
-                          <Cell 
-                            key={i} 
-                            fill={COLORS[i % COLORS.length]}
-                            stroke="#1e1b4b"
-                            strokeWidth={2}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<CustomPieTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
 
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">Total Spent</p>
-                    <p className="text-3xl font-bold text-white mt-1">
-                      {formatINR(totalExpenseValue)}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      across {chartData.length} categories
-                    </p>
+              <div className="grid grid-cols-7 gap-2 mb-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="text-center text-xs font-semibold text-gray-400 py-2">
+                    {day}
                   </div>
-                </div>
+                ))}
+              </div>
 
-                <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
-                  {chartData
-                    .sort((a, b) => b.value - a.value)
-                    .map((item, i) => {
-                      const percentage = ((item.value / totalExpenseValue) * 100).toFixed(1);
-                      return (
-                        <div 
-                          key={item.name} 
-                          className="bg-white/[0.03] hover:bg-white/[0.05] rounded-xl p-4 transition-all duration-200 border border-white/[0.05] hover:border-white/[0.1]"
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <div 
-                                className="w-3 h-3 rounded-full shadow-lg" 
-                                style={{ backgroundColor: COLORS[chartData.findIndex(c => c.name === item.name) % COLORS.length] }}
-                              />
-                              <span className="text-sm font-semibold text-white">{item.name}</span>
-                            </div>
-                            <span className="text-xs bg-white/[0.05] px-2 py-0.5 rounded text-gray-300">
-                              #{i + 1}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-base font-bold text-white">
-                              {formatINR(item.value)}
-                            </span>
-                            <span className="text-sm text-gray-400">
-                              {percentage}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-white/[0.05] rounded-full h-1.5">
-                            <div
-                              className="h-1.5 rounded-full transition-all duration-500"
-                              style={{ 
-                                width: `${percentage}%`,
-                                backgroundColor: COLORS[chartData.findIndex(c => c.name === item.name) % COLORS.length]
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+              <div className="grid grid-cols-7 gap-2">
+                {emptyDays.map(i => (
+                  <div key={`empty-${i}`} className="aspect-square" />
+                ))}
+                
+                {calendarDays.map(day => {
+                  const { totalSpent, transactions: dayTransactions } = getSpendingForDay(day);
+                  const isToday = day === now.getDate();
+                  const hasSpending = totalSpent > 0;
+                  
+                  let intensityClass = 'bg-white/[0.02]';
+                  if (hasSpending) {
+                    if (totalSpent > dailyBudget * 1.2) intensityClass = 'bg-red-500/30 border-red-500/40';
+                    else if (totalSpent > dailyBudget) intensityClass = 'bg-yellow-500/30 border-yellow-500/40';
+                    else if (totalSpent > dailyBudget * 0.5) intensityClass = 'bg-green-500/30 border-green-500/40';
+                    else intensityClass = 'bg-green-500/20 border-green-500/30';
+                  }
+
+                  return (
+                    <div
+                      key={day}
+                      onClick={() => handleDayClick(day)}
+                      className={`
+                        aspect-square rounded-xl border transition-all duration-200 flex flex-col items-center justify-center
+                        ${intensityClass}
+                        ${isToday ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-slate-950' : 'border-white/[0.05]'}
+                        ${hasSpending ? 'cursor-pointer hover:scale-105 hover:shadow-lg' : 'cursor-default'}
+                      `}
+                    >
+                      <span className={`text-sm font-semibold ${isToday ? 'text-indigo-400' : 'text-white'}`}>
+                        {day}
+                      </span>
+                      {hasSpending && (
+                        <span className="text-[10px] text-gray-300 mt-1 font-medium">
+                          ₹{totalSpent.toLocaleString("en-IN")}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-center gap-6 mt-6 pt-6 border-t border-white/[0.05]">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-green-500/30 border border-green-500/40"></div>
+                  <span className="text-xs text-gray-400">Within Budget</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-yellow-500/30 border border-yellow-500/40"></div>
+                  <span className="text-xs text-gray-400">Near Limit</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-red-500/30 border border-red-500/40"></div>
+                  <span className="text-xs text-gray-400">Over Budget</span>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
+
+        {/* DAY DETAIL MODAL */}
+        {showModal && selectedDay && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowModal(false)}>
+            <div 
+              className="relative bg-gradient-to-br from-slate-900 to-indigo-950 border border-white/[0.1] rounded-3xl p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => setShowModal(false)}
+                className="absolute top-6 right-6 w-10 h-10 bg-white/[0.05] hover:bg-white/[0.1] rounded-xl flex items-center justify-center transition-all duration-200 border border-white/[0.1] hover:border-white/[0.2]"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+
+              <div className="mb-6">
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/20 rounded-full backdrop-blur-sm mb-4">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-purple-300 font-medium">
+                    {now.toLocaleString('en-IN', { month: 'long' })} {selectedDay.day}, {now.getFullYear()}
+                  </span>
+                </div>
+                <h2 className="text-3xl font-bold text-white mb-2">
+                  Daily Transactions
+                </h2>
+                <p className="text-lg text-gray-400">
+                  Total spent: <span className="font-bold text-red-400">{formatINR(selectedDay.totalSpent)}</span>
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {selectedDay.transactions.map((transaction, idx) => (
+                  <div 
+                    key={idx}
+                    className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-5 hover:bg-white/[0.05] hover:border-white/[0.15] transition-all duration-200"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-white mb-1">
+                          {transaction.description || 'Expense'}
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-lg text-xs font-medium text-indigo-300">
+                            {transaction.category}
+                          </span>
+                          {transaction.date && (
+                            <span className="text-xs text-gray-500">
+                              {new Date(transaction.date).toLocaleTimeString('en-IN', { 
+                                hour: '2-digit', 
+                                minute: '2-digit' 
+                              })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-red-400">
+                          -{formatINR(Math.abs(transaction.amount))}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedDay.transactions.length === 0 && (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4 opacity-30">📭</div>
+                  <p className="text-gray-400">No transactions on this day</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+
+        {/* PIE CHART */}
+        <section className="grid grid-cols-1 gap-8">
+          <CategoryAnalysis 
+            chartData={chartData} 
+            totalExpenseValue={totalExpenseValue} 
+          />
+        </section>
 
         {/* BAR CHART */}
-        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 hover:bg-white/[0.05] hover:border-green-500/30 transition-all duration-300">
-          <div className="absolute -bottom-px -left-px w-40 h-40 bg-gradient-to-tr from-green-500/20 to-transparent rounded-bl-3xl blur-2xl"></div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-white mb-1">
-                  Monthly Income vs Expenses
-                </h2>
-                <p className="text-sm text-gray-400">Compare your earnings and spending trends</p>
-              </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl flex items-center justify-center text-2xl border border-green-500/20">
-                📈
-              </div>
-            </div>
-
-            {monthlyChartData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-6xl mb-4 opacity-30">📉</div>
-                <p className="text-gray-400 text-lg">No monthly data yet</p>
-                <p className="text-gray-500 text-sm mt-2">Transaction history will appear here</p>
-              </div>
-            ) : (
-              <>
-                <ResponsiveContainer height={320}>
-                  <BarChart data={monthlyChartData} barGap={8}>
-                    <CartesianGrid stroke="#374151" strokeDasharray="3 3" opacity={0.2} />
-                    <XAxis 
-                      dataKey="month" 
-                      stroke="#9CA3AF" 
-                      tick={{ fill: '#D1D5DB', fontSize: 12 }}
-                      axisLine={{ stroke: '#4B5563' }}
-                    />
-                    <YAxis 
-                      stroke="#9CA3AF"
-                      tick={{ fill: '#D1D5DB', fontSize: 12 }}
-                      axisLine={{ stroke: '#4B5563' }}
-                      tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#374151', opacity: 0.1 }} />
-                    <Bar 
-                      dataKey="income" 
-                      fill="#22C55E" 
-                      radius={[8, 8, 0, 0]}
-                      animationBegin={0}
-                      animationDuration={800}
-                    />
-                    <Bar 
-                      dataKey="expense" 
-                      fill="#EF4444" 
-                      radius={[8, 8, 0, 0]}
-                      animationBegin={0}
-                      animationDuration={800}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/[0.08]">
-                  <div className="text-center">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Total Income</p>
-                    <p className="text-xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
-                      {formatINR(monthlyChartData.reduce((sum, m) => sum + m.income, 0))}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Total Expenses</p>
-                    <p className="text-xl font-bold bg-gradient-to-r from-red-400 to-rose-400 bg-clip-text text-transparent">
-                      {formatINR(monthlyChartData.reduce((sum, m) => sum + m.expense, 0))}
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Net Balance</p>
-                    <p className={`text-xl font-bold bg-gradient-to-r ${
-                      monthlyChartData.reduce((sum, m) => sum + m.income - m.expense, 0) >= 0 
-                        ? 'from-green-400 to-emerald-400' 
-                        : 'from-red-400 to-rose-400'
-                    } bg-clip-text text-transparent`}>
-                      {formatINR(monthlyChartData.reduce((sum, m) => sum + m.income - m.expense, 0))}
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <section className="grid grid-cols-1 gap-8">
+           <CashFlowAnalysis monthlyChartData={monthlyChartData} />
+        </section>
         {/* INSIGHTS */}
         <Insights 
           budget={budget} 

@@ -1,19 +1,40 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import api from "../api/api";
 
 function Insights({ budget = 0, goal = 0, transactions = [] }) {
-  const insights = useMemo(() => {
+  const [apiInsights, setApiInsights] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchInsights = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get("/insights");
+        if (Array.isArray(res.data?.insights)) {
+          setApiInsights(res.data.insights);
+        }
+      } catch (err) {
+        console.log("Insights API not available, using local insights");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInsights();
+  }, []);
+
+  const computedInsights = useMemo(() => {
     if (!transactions || transactions.length === 0) return [];
 
     const totalIncome = transactions
       .filter((t) => t.amount > 0)
-      .reduce((acc, t) => acc + t.amount, 0);
+      .reduce((a, b) => a + b.amount, 0);
 
-    const totalSpent = transactions
-      .filter((t) => t.amount < 0)
-      .reduce((acc, t) => acc + t.amount, 0);
+    const totalSpent = Math.abs(
+      transactions.filter((t) => t.amount < 0).reduce((a, b) => a + b.amount, 0)
+    );
 
-    const savings = totalIncome - Math.abs(totalSpent);
+    const savings = totalIncome - totalSpent;
 
     const projected =
       savings > 0 && goal > 0
@@ -30,170 +51,282 @@ function Insights({ budget = 0, goal = 0, transactions = [] }) {
       Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ||
       "None";
 
-    const budgetUsedPercent =
-      budget > 0 ? (Math.abs(totalSpent) / budget) * 100 : 0;
-
-    const months = [
-      ...new Set(transactions.map((t) => new Date(t.date).getMonth())),
-    ];
-    const avgMonthlySpent = months.length
-      ? Math.abs(totalSpent) / months.length
-      : 0;
-
-    const monthlyData = transactions.reduce((acc, t) => {
-      const m = new Date(t.date).getMonth();
-      acc[m] = (acc[m] || 0) + (t.amount < 0 ? Math.abs(t.amount) : 0);
-      return acc;
-    }, {});
-
-    const today = new Date();
-    const trend =
-      (monthlyData[today.getMonth()] || 0) >
-      (monthlyData[today.getMonth() - 1] || 0)
-        ? "⬆️ High spending"
-        : "⬇️ Spending is down";
+    const budgetUsedPercent = budget > 0 ? (totalSpent / budget) * 100 : 0;
 
     return [
       {
         title: "Goal Timeline",
         value: projected === "N/A" ? "N/A" : `${projected} Months`,
-        description: "Based on current savings, this is how long you'll take to hit your target.",
+        description: "Based on your current savings rate, this is when you'll hit your target.",
         type: "good",
-        emoji: "🎯"
+        emoji: "🎯",
+        rawPercent: Math.min((savings / (goal || 1)) * 100, 100)
       },
       {
         title: "Top Category",
         value: topCategory,
-        description: "You spend the most here. Consider if this aligns with your priorities.",
+        description: "You are spending the most on this category. Consider reviewing these costs.",
         type: "caution",
-        emoji: "💳"
+        emoji: "💳",
       },
       {
         title: "Budget Status",
         value: `${budgetUsedPercent.toFixed(1)}%`,
-        description: "Your total spending relative to your initial monthly budget.",
-        type: budgetUsedPercent > 80 ? "bad" : "good",
-        emoji: "🏦"
+        description: budgetUsedPercent > 100 ? "You have exceeded your budget!" : "Monthly budget usage tracking.",
+        type: budgetUsedPercent > 90 ? "bad" : budgetUsedPercent > 70 ? "caution" : "good",
+        emoji: "🏦",
+        rawPercent: budgetUsedPercent
       },
       {
-        title: "Monthly Avg",
-        value: avgMonthlySpent.toLocaleString("en-IN", {
+        title: "Savings Health",
+        value: savings.toLocaleString("en-IN", {
           style: "currency",
           currency: "INR",
         }),
-        description: "This is your baseline monthly burn rate.",
-        type: "caution",
-        emoji: "📊"
-      },
-      {
-        title: "Spend Trend",
-        value: trend,
-        description: "How your current monthly spending compares to the previous month.",
-        type: trend.includes("⬆️") ? "caution" : "good",
-        emoji: "🔥"
+        description: "Your net cash flow. A positive value indicates healthy saving habits.",
+        type: savings >= 0 ? "good" : "bad",
+        emoji: "💎",
       },
     ];
   }, [budget, goal, transactions]);
 
+  const insights = apiInsights ?? computedInsights;
+
   return (
-    <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 hover:bg-white/[0.05] hover:border-purple-500/30 transition-all duration-300 overflow-hidden">
-      {/* Visual background flare */}
-      <div className="absolute -top-px -right-px w-40 h-40 bg-gradient-to-br from-purple-500/10 to-transparent rounded-tr-3xl blur-2xl"></div>
+    <div className="relative bg-[#0f172a]/40 backdrop-blur-2xl border border-white/[0.08] mt-6 rounded-[2rem] p-6 sm:p-10 hover:border-purple-500/20 transition-all duration-500 group overflow-hidden">
+      {/* Enhanced Dynamic Background Glow */}
+      <div className="absolute -top-24 -right-24 w-64 h-64 bg-purple-600/10 rounded-full blur-[100px] group-hover:bg-purple-600/20 transition-all duration-700"></div>
+      <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-blue-600/5 rounded-full blur-[120px] group-hover:bg-blue-600/10 transition-all duration-700"></div>
       
       <div className="relative z-10">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-1">Smart Insights</h2>
-            <p className="text-sm text-gray-400">AI-powered analysis of your financial health</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-10">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-purple-400 animate-pulse shadow-lg shadow-purple-500/50"></span>
+              <h2 className="text-3xl font-bold text-white tracking-tight bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+                Smart Insights
+              </h2>
+            </div>
+            <p className="text-sm text-gray-400 font-medium pl-5">
+              AI-driven analysis of your financial footprint
+            </p>
           </div>
-          <div className="w-12 h-12 bg-gradient-to-br from-purple-500/20 to-indigo-500/20 rounded-xl flex items-center justify-center text-2xl border border-purple-500/20 shadow-lg shadow-purple-500/10">
-            ✨
-          </div>
+          <motion.div 
+            whileHover={{ scale: 1.05 }}
+            className="self-start sm:self-center px-5 py-2.5 bg-gradient-to-r from-purple-500/10 to-purple-600/10 border border-purple-500/30 rounded-xl flex items-center gap-2.5 text-purple-300 text-sm font-bold backdrop-blur-md shadow-lg shadow-purple-500/5"
+          >
+            <motion.span 
+              animate={{ rotate: 360 }}
+              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+              className="text-base"
+            >
+              ✨
+            </motion.span>
+            <span className="bg-gradient-to-r from-purple-300 to-purple-400 bg-clip-text text-transparent">
+              Intelligence Active
+            </span>
+          </motion.div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {insights.length === 0 ? (
-            <div className="col-span-full py-10 text-center text-gray-500 bg-white/[0.02] rounded-2xl border border-dashed border-white/10">
-              Not enough data for insights. Add more transactions!
-            </div>
-          ) : (
-            insights.map((insight, idx) => (
-              <InsightCard key={idx} insight={insight} />
-            ))
-          )}
-        </div>
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {[1, 2, 3, 4].map((i) => (
+              <motion.div 
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="h-32 bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl animate-pulse border border-white/10 backdrop-blur-sm"
+              >
+                <div className="p-5 space-y-3">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white/10 rounded-xl"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 bg-white/10 rounded w-1/3"></div>
+                      <div className="h-4 bg-white/10 rounded w-2/3"></div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <motion.div 
+            initial="hidden"
+            animate="show"
+            variants={{
+              show: { transition: { staggerChildren: 0.08 } }
+            }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-5"
+          >
+            {insights.length === 0 ? (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="col-span-full py-20 text-center"
+              >
+                <motion.div 
+                  animate={{ y: [0, -10, 0] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                  className="text-5xl mb-6 opacity-20"
+                >
+                  📊
+                </motion.div>
+                <p className="text-gray-400 font-semibold text-xl mb-2">Not enough data to generate insights yet.</p>
+                <p className="text-gray-600 text-sm">Add more transactions to see the magic ✨</p>
+              </motion.div>
+            ) : (
+              insights.map((insight, idx) => (
+                <InsightCard key={idx} insight={insight} index={idx} />
+              ))
+            )}
+          </motion.div>
+        )}
       </div>
     </div>
   );
 }
 
-function InsightCard({ insight }) {
+function InsightCard({ insight, index }) {
   const [expanded, setExpanded] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
-  const styles = {
+  const styleMap = {
     good: {
-      bg: "bg-emerald-500/5",
+      accent: "bg-emerald-400",
+      gradient: "from-emerald-500/[0.05] to-emerald-600/[0.02]",
+      border: "hover:border-emerald-500/40",
       text: "text-emerald-400",
-      border: "border-emerald-500/20",
-      glow: "shadow-emerald-500/5",
-      accent: "bg-emerald-500"
+      glow: "group-hover:shadow-[0_0_30px_-5px_rgba(52,211,153,0.2)]",
+      iconBg: "bg-emerald-500/10 border-emerald-500/20",
+      progressGlow: "shadow-[0_0_10px_rgba(52,211,153,0.3)]"
     },
     caution: {
-      bg: "bg-amber-500/5",
+      accent: "bg-amber-400",
+      gradient: "from-amber-500/[0.05] to-amber-600/[0.02]",
+      border: "hover:border-amber-500/40",
       text: "text-amber-400",
-      border: "border-amber-500/20",
-      glow: "shadow-amber-500/5",
-      accent: "bg-amber-500"
+      glow: "group-hover:shadow-[0_0_30px_-5px_rgba(251,191,36,0.2)]",
+      iconBg: "bg-amber-500/10 border-amber-500/20",
+      progressGlow: "shadow-[0_0_10px_rgba(251,191,36,0.3)]"
     },
     bad: {
-      bg: "bg-rose-500/5",
+      accent: "bg-rose-400",
+      gradient: "from-rose-500/[0.05] to-rose-600/[0.02]",
+      border: "hover:border-rose-500/40",
       text: "text-rose-400",
-      border: "border-rose-500/20",
-      glow: "shadow-rose-500/5",
-      accent: "bg-rose-500"
+      glow: "group-hover:shadow-[0_0_30px_-5px_rgba(251,113,113,0.2)]",
+      iconBg: "bg-rose-500/10 border-rose-500/20",
+      progressGlow: "shadow-[0_0_10px_rgba(251,113,133,0.3)]"
     },
   };
 
-  const style = styles[insight.type];
+  const style = styleMap[insight.type] || styleMap.good;
 
   return (
     <motion.div
       layout
+      variants={{
+        hidden: { opacity: 0, y: 20, scale: 0.95 },
+        show: { 
+          opacity: 1, 
+          y: 0, 
+          scale: 1,
+          transition: { type: "spring", stiffness: 100 }
+        }
+      }}
+      whileHover={{ scale: 1.02 }}
       onClick={() => setExpanded(!expanded)}
-      className={`group relative overflow-hidden border ${style.border} ${style.bg} ${style.glow} rounded-2xl p-5 cursor-pointer hover:bg-white/[0.05] transition-all duration-300 shadow-xl`}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
+      className={`group relative border border-white/[0.08] bg-gradient-to-br ${style.gradient} rounded-2xl p-6 cursor-pointer transition-all duration-300 backdrop-blur-sm ${style.border} ${style.glow} overflow-hidden`}
     >
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-xl grayscale group-hover:grayscale-0 transition-all border border-white/5">
+      {/* Animated gradient overlay on hover */}
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: isHovered ? 1 : 0 }}
+        className={`absolute inset-0 bg-gradient-to-br ${style.gradient} opacity-50`}
+      />
+
+      <div className="flex items-center justify-between relative z-10 mb-4">
+        <div className="flex gap-4 items-center flex-1">
+          <motion.div 
+            whileHover={{ rotate: [0, -10, 10, -10, 0] }}
+            transition={{ duration: 0.5 }}
+            className={`w-14 h-14 ${style.iconBg} border rounded-xl flex items-center justify-center text-3xl shadow-lg backdrop-blur-sm`}
+          >
             {insight.emoji}
-          </div>
-          <div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-0.5">{insight.title}</p>
-            <p className={`text-lg font-bold ${style.text}`}>{insight.value}</p>
+          </motion.div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] uppercase text-gray-500 font-bold tracking-widest mb-1 flex items-center gap-2">
+              {insight.title}
+              {index === 0 && (
+                <span className="text-[8px] px-2 py-0.5 bg-purple-500/20 border border-purple-500/30 rounded-full text-purple-300">
+                  NEW
+                </span>
+              )}
+            </p>
+            <motion.p 
+              layout
+              className={`text-2xl font-bold tracking-tight ${style.text} truncate`}
+            >
+              {insight.value}
+            </motion.p>
           </div>
         </div>
+        
         <motion.div 
-           animate={{ rotate: expanded ? 180 : 0 }}
-           className="text-gray-600 group-hover:text-gray-400"
+          animate={{ rotate: expanded ? 180 : 0 }}
+          whileHover={{ scale: 1.1 }}
+          className="w-9 h-9 rounded-xl bg-white/[0.08] flex items-center justify-center text-xs text-gray-400 border border-white/10 hover:border-white/20 transition-colors flex-shrink-0 ml-2"
         >
           ▼
         </motion.div>
       </div>
 
+      {/* Enhanced Progress bar */}
+      {insight.rawPercent !== undefined && (
+        <div className="relative z-10 w-full h-1.5 bg-white/[0.08] rounded-full overflow-hidden mb-1">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${Math.min(insight.rawPercent, 100)}%` }}
+            transition={{ duration: 1.2, ease: "easeOut", delay: 0.2 }}
+            className={`h-full ${style.accent} ${style.progressGlow}`}
+          />
+        </div>
+      )}
+
       <AnimatePresence>
         {expanded && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden relative z-10"
           >
-            <p className="mt-4 pt-4 border-t border-white/5 text-sm leading-relaxed text-gray-400">
-              {insight.description}
-            </p>
+            <motion.div 
+              initial={{ y: -10 }}
+              animate={{ y: 0 }}
+              className="mt-5 pt-5 border-t border-white/[0.08]"
+            >
+              <p className="text-sm text-gray-300 leading-relaxed font-medium">
+                {insight.description}
+              </p>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* Enhanced Accent Line */}
+      <motion.div 
+        initial={{ width: 0 }}
+        animate={{ width: isHovered ? "50%" : "0%" }}
+        className={`absolute bottom-0 left-1/2 -translate-x-1/2 h-[3px] ${style.accent} transition-all duration-500 rounded-full ${style.progressGlow}`}
+      />
+
+      {/* Corner accent */}
+      <div className={`absolute top-0 right-0 w-20 h-20 ${style.accent} opacity-5 rounded-bl-full transition-opacity duration-500 group-hover:opacity-10`} />
     </motion.div>
   );
 }

@@ -1,10 +1,5 @@
 import { useState } from "react";
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  useLocation,
-} from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 
 // Components
@@ -45,7 +40,6 @@ function AnimatedRoutes({
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        {/* 🔐 HOME */}
         <Route
           path="/"
           element={
@@ -67,7 +61,6 @@ function AnimatedRoutes({
           }
         />
 
-        {/* 🔐 TRANSACTIONS */}
         <Route
           path="/transactions"
           element={
@@ -88,7 +81,6 @@ function AnimatedRoutes({
           }
         />
 
-        {/* 🔐 PROFILE */}
         <Route
           path="/profile"
           element={
@@ -98,7 +90,6 @@ function AnimatedRoutes({
           }
         />
 
-        {/* 🔐 BUDGET & GOALS */}
         <Route
           path="/budget-goals"
           element={
@@ -121,7 +112,6 @@ function AnimatedRoutes({
           }
         />
 
-        {/* 🔓 AUTH */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
       </Routes>
@@ -138,22 +128,20 @@ function App() {
   const [goal, setGoal] = useState(0);
 
   return (
-    <Router>
-      <div className="min-h-screen bg-[#0B0F19] text-gray-200">
-        <Navbar />
+    <div className="min-h-screen bg-[#0B0F19] text-gray-200">
+      <Navbar />
 
-        <main className="px-4 sm:px-6 py-6">
-          <AnimatedRoutes
-            budget={budget}
-            goal={goal}
-            transactions={transactions}
-            setTransactions={setTransactions}
-            setBudget={setBudget}
-            setGoal={setGoal}
-          />
-        </main>
-      </div>
-    </Router>
+      <main className="px-4 sm:px-6 py-6">
+        <AnimatedRoutes
+          budget={budget}
+          goal={goal}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          setBudget={setBudget}
+          setGoal={setGoal}
+        />
+      </main>
+    </div>
   );
 }
 

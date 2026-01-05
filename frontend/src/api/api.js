@@ -18,10 +18,18 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    // Check if the request failed was the LOGIN request
+    const isLoginRequest = err.config.url.includes("/auth/login");
+
+    if (err.response?.status === 401 && !isLoginRequest) {
+      // ONLY redirect if we aren't already on/trying to login
       localStorage.removeItem("token");
-      window.location.href = "/login";
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
     }
+    
+    // IMPORTANT: Always return the error so the .catch() in Login.jsx can see it
     return Promise.reject(err);
   }
 );
