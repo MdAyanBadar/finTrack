@@ -164,7 +164,7 @@ function App() {
             transactions={transactions}
             setTransactions={setTransactions}
             setBudget={setBudget}
-            setGoal={setGoal}
+            setGoal={setGoal}xs
           />
         </main>
       </div>
