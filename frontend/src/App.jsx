@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -6,7 +6,6 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import api from "./api/api";
 
 // Components
 import Home from "./components/Home";
@@ -88,15 +87,16 @@ function AnimatedRoutes({
             </ProtectedRoute>
           }
         />
-        <Route
-  path="/profile"
-  element={
-    <ProtectedRoute>
-      <Profile />
-    </ProtectedRoute>
-  }
-/>
 
+        {/* 🔐 PROFILE */}
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
 
         {/* 🔐 BUDGET & GOALS */}
         <Route
@@ -137,23 +137,8 @@ function App() {
   const [budget, setBudget] = useState(0);
   const [goal, setGoal] = useState(0);
 
-  // 🔥 FETCH TRANSACTIONS FROM DB (ONCE)
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      try {
-        const res = await api.get("/transactions");
-        setTransactions(res.data);
-      } catch (err) {
-        console.error("Failed to fetch transactions");
-      }
-    };
-
-    fetchTransactions();
-  }, []);
-
   return (
     <Router>
-      {/* 🌙 DARK FINTECH BASE */}
       <div className="min-h-screen bg-[#0B0F19] text-gray-200">
         <Navbar />
 
