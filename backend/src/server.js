@@ -16,7 +16,7 @@ const app = express();
 ====================== */
 const allowedOrigins = [
   "http://localhost:5174",              // local frontend
-  "https://fin-track-black.vercel.app", // production frontend
+  "https://fin-track-steel-chi.vercel.app", // production frontend
 ];
 
 app.use(
