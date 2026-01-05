@@ -7,32 +7,31 @@ import authRoutes from "./routes/auth.routes.js";
 import budgetRoutes from "./routes/budget.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
-
 dotenv.config();
 
 const app = express();
 
 /* ======================
-   CORS CONFIG (IMPORTANT)
+   CORS CONFIG (SAFE)
 ====================== */
 const allowedOrigins = [
-  "http://localhost:5174",              // local frontend
-  "https://fin-track-steel-chi.vercel.app", // production frontend
+  "http://localhost:5174",
+  "https://fin-track-steel-chi.vercel.app",
 ];
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // allow Postman / server-to-server requests
+    origin: (origin, callback) => {
+      // allow Postman / server-side requests
       if (!origin) return callback(null, true);
 
+      // allow known frontends
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
-      } else {
-        return callback(
-          new Error(`CORS blocked for origin: ${origin}`)
-        );
       }
+
+      // silently block others (DO NOT throw error)
+      return callback(null, false);
     },
     credentials: true,
   })
@@ -44,15 +43,18 @@ app.use(
 app.use(express.json());
 
 /* ======================
-   ROUTES
+   HEALTH CHECK
 ====================== */
 app.get("/", (req, res) => {
   res.json({
     status: "FinTrack backend running 🚀",
-    environment: process.env.NODE_ENV || "development",
+    env: process.env.NODE_ENV || "development",
   });
 });
 
+/* ======================
+   ROUTES
+====================== */
 app.use("/api/auth", authRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/budget", budgetRoutes);
@@ -69,8 +71,10 @@ app.use((req, res) => {
    ERROR HANDLER
 ====================== */
 app.use((err, req, res, next) => {
-  console.error("❌ Error:", err.message);
-  res.status(500).json({ message: err.message || "Server error" });
+  console.error("❌ Server Error:", err.message);
+  res.status(500).json({
+    message: err.message || "Internal server error",
+  });
 });
 
 /* ======================
