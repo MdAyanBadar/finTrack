@@ -1,29 +1,47 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import api from "../api/api";
 
 function Login() {
+  const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  /* =========================
+     ✅ REAL LOGIN
+  ========================= */
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
-    // Simulated login - replace with actual API call
-    setTimeout(() => {
-      if (email && password) {
-        console.log("Login successful");
-      } else {
-        setError("Invalid credentials");
-      }
+    if (!email || !password) {
+      setError("Email and password are required");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await api.post("/auth/login", {
+        email,
+        password,
+      });
+
+      // ✅ Save JWT
+      localStorage.setItem("token", res.data.token);
+
+      // ✅ Redirect to dashboard
+      navigate("/");
+    } catch (err) {
+      setError(err.response?.data?.message || "Login failed");
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
-
   const features = [
     {
       icon: "📊",
