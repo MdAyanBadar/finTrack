@@ -15,8 +15,14 @@ const app = express();
    MIDDLEWARE
 ====================== */
 app.use(cors({
-  origin: true, // ✅ allow Vercel, localhost, Postman
+  origin: [
+    "https://fin-track-steel-chi.vercel.app", // Your Vercel frontend URL
+    "http://localhost:5173",                 // Your local dev URL
+    "http://localhost:5174"
+  ],
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json());
