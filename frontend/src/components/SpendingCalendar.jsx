@@ -109,7 +109,7 @@ const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
                   {hasSpending && (
                     <>
                       <span className="hidden sm:block text-[10px] text-gray-400 mt-1 font-medium">
-                        ₹{(totalSpent / 1000).toFixed(1)}k
+                        ₹{(totalSpent).toLocaleString("en-IN")}
                       </span>
                       <div className={`sm:hidden w-1.5 h-1.5 rounded-full mt-1 
                         ${totalSpent > dailyBudget ? 'bg-rose-500' : 'bg-emerald-500'}`} 
