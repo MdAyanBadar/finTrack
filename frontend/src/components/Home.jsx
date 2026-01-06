@@ -21,6 +21,7 @@ import LoadingScreen from "./LoadingScreen";
 import NotificationBar from "./NotificationBar";
 import CategoryAnalysis from "./CategoryAnalysis";
 import CashFlowAnalysis from "./CashFlowAnalysis";
+import SpendingCalendar from "./SpendingCalendar";
 
 function Home() {
   /* =========================
@@ -77,6 +78,10 @@ function Home() {
 
   fetchDashboard();
 }, []);
+
+// ... existing states
+
+
 
 
   if (loading) {
@@ -373,96 +378,11 @@ function Home() {
         </div>
 
         {/* CALENDAR */}
-        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8 mb-8 hover:bg-white/[0.05] hover:border-purple-500/30 transition-all duration-300 overflow-hidden">
-          <div className="absolute -top-px -left-px w-40 h-40 bg-gradient-to-br from-purple-500/20 to-transparent rounded-tl-3xl blur-2xl"></div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-white mb-1">
-                  Daily Spending Calendar
-                </h2>
-                <p className="text-sm text-gray-400">Click on any day to view detailed transactions</p>
-              </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-xl flex items-center justify-center text-2xl border border-purple-500/20">
-                📅
-              </div>
-            </div>
-
-            <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/[0.05]">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-white">
-                  {now.toLocaleString('en-IN', { month: 'long', year: 'numeric' })}
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-7 gap-2 mb-2">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="text-center text-xs font-semibold text-gray-400 py-2">
-                    {day}
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-7 gap-2">
-                {emptyDays.map(i => (
-                  <div key={`empty-${i}`} className="aspect-square" />
-                ))}
-                
-                {calendarDays.map(day => {
-                  const { totalSpent, transactions: dayTransactions } = getSpendingForDay(day);
-                  const isToday = day === now.getDate();
-                  const hasSpending = totalSpent > 0;
-                  
-                  let intensityClass = 'bg-white/[0.02]';
-                  if (hasSpending) {
-                    if (totalSpent > dailyBudget * 1.2) intensityClass = 'bg-red-500/30 border-red-500/40';
-                    else if (totalSpent > dailyBudget) intensityClass = 'bg-yellow-500/30 border-yellow-500/40';
-                    else if (totalSpent > dailyBudget * 0.5) intensityClass = 'bg-green-500/30 border-green-500/40';
-                    else intensityClass = 'bg-green-500/20 border-green-500/30';
-                  }
-
-                  return (
-                    <div
-                      key={day}
-                      onClick={() => handleDayClick(day)}
-                      className={`
-                        aspect-square rounded-xl border transition-all duration-200 flex flex-col items-center justify-center
-                        ${intensityClass}
-                        ${isToday ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-slate-950' : 'border-white/[0.05]'}
-                        ${hasSpending ? 'cursor-pointer hover:scale-105 hover:shadow-lg' : 'cursor-default'}
-                      `}
-                    >
-                      <span className={`text-sm font-semibold ${isToday ? 'text-indigo-400' : 'text-white'}`}>
-                        {day}
-                      </span>
-                      {hasSpending && (
-                        <span className="text-[10px] text-gray-300 mt-1 font-medium">
-                          ₹{totalSpent.toLocaleString("en-IN")}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex items-center justify-center gap-6 mt-6 pt-6 border-t border-white/[0.05]">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-green-500/30 border border-green-500/40"></div>
-                  <span className="text-xs text-gray-400">Within Budget</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-yellow-500/30 border border-yellow-500/40"></div>
-                  <span className="text-xs text-gray-400">Near Limit</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-red-500/30 border border-red-500/40"></div>
-                  <span className="text-xs text-gray-400">Over Budget</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SpendingCalendar 
+          transactions={transactions} 
+          dailyBudget={dailyBudget} 
+          formatINR={formatINR} 
+        />
 
         {/* DAY DETAIL MODAL */}
         {showModal && selectedDay && (
