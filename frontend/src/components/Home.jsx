@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   PieChart,
   Pie,
@@ -32,6 +32,27 @@ function Home() {
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(null);
   const [showModal, setShowModal] = useState(false);
+
+  const { categoryData, totalExpense } = useMemo(() => {
+    // 1. Filter for expenses only
+    const expenses = transactions.filter((t) => t.amount < 0);
+
+    // 2. Group by category
+    const grouped = expenses.reduce((acc, t) => {
+      const cat = t.category || "General";
+      if (!acc[cat]) {
+        acc[cat] = { name: cat, value: 0, count: 0 };
+      }
+      acc[cat].value += Math.abs(t.amount);
+      acc[cat].count += 1;
+      return acc;
+    }, {});
+
+    const categoryData = Object.values(grouped);
+    const totalExpense = categoryData.reduce((sum, item) => sum + item.value, 0);
+
+    return { categoryData, totalExpense };
+  }, [transactions]);
 
   /* =========================
      FETCH DASHBOARD DATA
@@ -216,6 +237,7 @@ function Home() {
       </div>
     );
   }
+  
 
   /* =========================
      UI
@@ -520,9 +542,9 @@ function Home() {
         {/* PIE CHART */}
         <section className="grid grid-cols-1 gap-8">
           <CategoryAnalysis 
-            chartData={chartData} 
-            totalExpenseValue={totalExpenseValue} 
-          />
+        chartData={categoryData} 
+        totalExpenseValue={totalExpense} 
+      />
         </section>
 
         {/* BAR CHART */}
