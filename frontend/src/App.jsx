@@ -11,6 +11,7 @@ import Login from "./components/Login";
 import Register from "./components/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Profile from "./components/Profile";
+import Footer from "./components/Footer";
 
 /* =========================
    ANIMATED ROUTES
@@ -131,7 +132,7 @@ function App() {
     <div className="min-h-screen bg-[#0B0F19] text-gray-200">
       <Navbar />
 
-      <main className="px-4 sm:px-6 py-6">
+      <main className="">
         <AnimatedRoutes
           budget={budget}
           goal={goal}
@@ -141,6 +142,7 @@ function App() {
           setGoal={setGoal}
         />
       </main>
+      <Footer />
     </div>
   );
 }
