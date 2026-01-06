@@ -93,25 +93,30 @@ function Home() {
   /* =========================
      CALCULATIONS
   ========================= */
-  const totalIncome = transactions
-    .filter((t) => t.amount > 0)
-    .reduce((acc, t) => acc + t.amount, 0);
+const totalIncome = transactions
+  .filter((t) => t.amount > 0)
+  .reduce((acc, t) => acc + t.amount, 0);
 
-  const totalSpent = transactions
-    .filter((t) => t.amount < 0)
-    .reduce((acc, t) => acc + t.amount, 0);
+const totalSpent = transactions
+  .filter((t) => t.amount < 0)
+  .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
-  const balance = budget + totalIncome + totalSpent;
-  const savings = totalIncome - Math.abs(totalSpent);
+// ✅ FIXED
+const balance = budget + totalIncome - totalSpent;
+
+// ✅ REAL savings
+const savings = Math.max(0, balance);
+
+// ✅ Goal progress
+const goalProgress =
+  goal > 0 ? Math.min((savings / goal) * 100, 100) : 0;
+
 
   const formatINR = (amount) =>
     amount.toLocaleString("en-IN", {
       style: "currency",
       currency: "INR",
     });
-
-  const goalProgress =
-    goal > 0 ? Math.min((savings / goal) * 100, 100) : 0;
 
   /* =========================
      DAILY BUDGET

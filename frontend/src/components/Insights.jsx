@@ -30,16 +30,33 @@ function Insights({ budget = 0, goal = 0, transactions = [] }) {
       .filter((t) => t.amount > 0)
       .reduce((a, b) => a + b.amount, 0);
 
-    const totalSpent = Math.abs(
-      transactions.filter((t) => t.amount < 0).reduce((a, b) => a + b.amount, 0)
-    );
+    const totalSpent = transactions
+      .filter((t) => t.amount < 0)
+      .reduce((a, b) => a + Math.abs(b.amount), 0);
 
-    const savings = totalIncome - totalSpent;
+    // ✅ TRUE balance (Starting budget + income - expenses)
+    const balance = budget + totalIncome - totalSpent;
+    const savings = Math.max(0, balance);
 
-    const projected =
-      savings > 0 && goal > 0
-        ? Math.max(Math.ceil((goal - savings) / savings), 0)
-        : "N/A";
+    // ✅ PROJECTED MONTHLY SAVINGS
+    // Logic: If you budgeted 7000 and spent 4934, you are saving 2066/month.
+    // If you have no budget set, it falls back to actual Net Income (Income - Spent).
+    const monthlySavingPower = budget > 0 
+      ? (budget - totalSpent) 
+      : (totalIncome - totalSpent);
+
+    const amountToGoal = goal - savings;
+    
+    let projected;
+    if (savings >= goal) {
+      projected = 0;
+    } else if (monthlySavingPower <= 0) {
+      projected = "N/A"; // If spending exceeds budget/income, goal is unreachable
+    } else {
+      projected = Math.ceil(amountToGoal / monthlySavingPower);
+    }
+
+    const budgetUsedPercent = budget > 0 ? (totalSpent / budget) * 100 : 0;
 
     const categoryTotals = transactions.reduce((acc, t) => {
       if (t.amount < 0)
@@ -51,21 +68,21 @@ function Insights({ budget = 0, goal = 0, transactions = [] }) {
       Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ||
       "None";
 
-    const budgetUsedPercent = budget > 0 ? (totalSpent / budget) * 100 : 0;
-
     return [
       {
         title: "Goal Timeline",
         value: projected === "N/A" ? "N/A" : `${projected} Months`,
-        description: "Based on your current savings rate, this is when you'll hit your target.",
-        type: "good",
+        description: projected === 0 
+          ? "Goal reached!" 
+          : `At your current rate of saving ${monthlySavingPower.toLocaleString("en-IN", { style: "currency", currency: "INR" })} per month, you'll hit your goal soon.`,
+        type: projected === "N/A" ? "bad" : "good",
         emoji: "🎯",
         rawPercent: Math.min((savings / (goal || 1)) * 100, 100)
       },
       {
         title: "Top Category",
         value: topCategory,
-        description: "You are spending the most on this category. Consider reviewing these costs.",
+        description: "You are spending the most on this category.",
         type: "caution",
         emoji: "💳",
       },
@@ -83,7 +100,7 @@ function Insights({ budget = 0, goal = 0, transactions = [] }) {
           style: "currency",
           currency: "INR",
         }),
-        description: "Your net cash flow. A positive value indicates healthy saving habits.",
+        description: "Total available liquidity.",
         type: savings >= 0 ? "good" : "bad",
         emoji: "💎",
       },
