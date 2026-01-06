@@ -45,21 +45,7 @@ const CategoryAnalysis = ({ chartData = [], totalExpenseValue = 0 }) => {
   const displayValue = selectedCategory ? selectedCategory.value : totalExpenseValue;
   const displayLabel = selectedCategory ? selectedCategory.name : "Total Outflow";
 
-  // Custom Tooltip Component
-  const CustomPieTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-2xl">
-          <p className="text-xs text-gray-400 uppercase font-bold mb-1">{payload[0].name}</p>
-          <p className="text-xl font-bold text-white">{formatINR(payload[0].value)}</p>
-          <p className="text-xs text-indigo-400 font-medium">
-            {((payload[0].value / totalExpenseValue) * 100).toFixed(1)}% of total
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
+
 
   return (
     <div className="relative bg-white/[0.02] backdrop-blur-3xl border border-white/[0.08] rounded-[2.5rem] p-5 sm:p-8 mb-8 overflow-hidden group transition-all duration-500 hover:border-indigo-500/20">
@@ -142,7 +128,6 @@ const CategoryAnalysis = ({ chartData = [], totalExpenseValue = 0 }) => {
                         />
                       ))}
                     </Pie>
-                    <Tooltip content={<CustomPieTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
 
