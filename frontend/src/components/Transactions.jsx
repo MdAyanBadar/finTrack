@@ -265,6 +265,9 @@ function Transactions() {
                   <div>
                     <h4 className="text-white font-bold text-lg">
                       {t.title}
+                      {t.source && (
+                        <span title={`Imported automatically from a bank ${t.source}`} className="ml-2 align-middle text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20">📩 Auto</span>
+                      )}
                       {t.recurringId && (
                         <span title="Added automatically by a recurring item" className="ml-2 align-middle text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-300 border border-orange-500/20">🔁 Recurring</span>
                       )}

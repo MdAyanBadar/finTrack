@@ -12,6 +12,8 @@ model User {
   name            String
   email           String                 @unique
   password        String
+  // SHA-256 of the personal key used by email/SMS auto-import; never stored in plain text
+  ingestKeyHash   String?                @unique
   createdAt       DateTime               @default(now())
   transactions    Transaction[]
   budget          Budget?
@@ -29,11 +31,14 @@ model Transaction {
   date        DateTime
   createdAt   DateTime @default(now())
   recurringId String?
+  source      String? // "email" | "sms" when auto-imported
+  externalRef String? // bank reference (RRN/UPI ref) or text hash, for de-duplication
 
   user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   recurring RecurringTransaction? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
 
   @@unique([recurringId, date])
+  @@unique([userId, externalRef])
   @@index([userId, date])
 }
 

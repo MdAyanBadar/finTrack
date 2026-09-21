@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
+import AutoImport from "./AutoImport";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   LogOut, Mail, Calendar, Shield, Settings, User, 
@@ -147,6 +148,9 @@ function Profile() {
             </div>
           </div>
         </div>
+
+        {/* AUTO-IMPORT */}
+        <AutoImport />
 
         {/* 5. DANGER ZONE */}
         <div className="pt-8">

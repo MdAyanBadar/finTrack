@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth.routes.js";
 import budgetRoutes from "./routes/budget.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import recurringRoutes from "./routes/recurring.routes.js";
+import ingestRoutes from "./routes/ingest.routes.js";
 
 const app = express();
 
@@ -22,7 +23,7 @@ app.use(cors({
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Ingest-Key"]
 }));
 
 app.use(express.json());
@@ -39,6 +40,7 @@ app.use("/api/transactions", transactionRoutes);
 app.use("/api/budget", budgetRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/recurring", recurringRoutes);
+app.use("/api/ingest", ingestRoutes);
 
 /* ======================
    SERVER
