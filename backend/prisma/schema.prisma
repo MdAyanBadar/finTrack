@@ -8,26 +8,33 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(uuid())
-  name         String
-  email        String        @unique
-  password     String
-  createdAt    DateTime      @default(now())
-  transactions Transaction[]
-  budget       Budget?
+  id              String                 @id @default(uuid())
+  name            String
+  email           String                 @unique
+  password        String
+  createdAt       DateTime               @default(now())
+  transactions    Transaction[]
+  budget          Budget?
+  categoryBudgets CategoryBudget[]
+  recurring       RecurringTransaction[]
 }
 
 model Transaction {
-  id        String   @id @default(uuid())
-  userId    String
-  title     String
-  amount    Float
-  type      String
-  category  String
-  date      DateTime
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  amount      Float
+  type        String
+  category    String
+  date        DateTime
+  createdAt   DateTime @default(now())
+  recurringId String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recurring RecurringTransaction? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+
+  @@unique([recurringId, date])
+  @@index([userId, date])
 }
 
 model Budget {
@@ -35,7 +42,38 @@ model Budget {
   userId        String   @unique
   monthlyBudget Float
   savingsGoal   Float
+  salaryDay     Int      @default(1)
   updatedAt     DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Spending limit for one category, per pay cycle
+model CategoryBudget {
+  id       String @id @default(uuid())
+  userId   String
+  category String
+  limit    Float
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category])
+}
+
+// Rent, EMIs, subscriptions, salary... posted automatically each month
+model RecurringTransaction {
+  id         String    @id @default(uuid())
+  userId     String
+  title      String
+  amount     Float // signed like Transaction: negative = expense
+  type       String
+  category   String
+  dayOfMonth Int
+  startDate  DateTime
+  endMonth   String? // "YYYY-MM" last month it runs; null = always
+  lastPosted DateTime?
+  createdAt  DateTime  @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
 }

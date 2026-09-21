@@ -1,13 +1,12 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 
 import transactionRoutes from "./routes/transaction.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import budgetRoutes from "./routes/budget.routes.js";
 import userRoutes from "./routes/user.routes.js";
-
-dotenv.config();
+import recurringRoutes from "./routes/recurring.routes.js";
 
 const app = express();
 
@@ -18,7 +17,8 @@ app.use(cors({
   origin: [
     "https://fin-track-steel-chi.vercel.app", // Your Vercel frontend URL
     "http://localhost:5173",                 // Your local dev URL
-    "http://localhost:5174"
+    "http://localhost:5174",
+    ...(process.env.CORS_ORIGINS?.split(",").map((o) => o.trim()) ?? []),
   ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
@@ -38,6 +38,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/budget", budgetRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/recurring", recurringRoutes);
 
 /* ======================
    SERVER

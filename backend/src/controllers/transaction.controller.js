@@ -1,10 +1,16 @@
 import prisma from "../prisma.js";
+import { postDueRecurring } from "./recurring.controller.js";
 
 /**
  * GET all transactions for logged-in user
  */
 export const getTransactions = async (req, res) => {
   try {
+    // Post any recurring items that came due; never block the list on it
+    await postDueRecurring(req.userId).catch((err) =>
+      console.error("Recurring posting error:", err)
+    );
+
     const transactions = await prisma.transaction.findMany({
       where: { userId: req.userId },
       orderBy: { date: "desc" },

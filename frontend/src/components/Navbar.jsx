@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api/api";
+import { prefetchTransactions } from "../api/transactionStore";
 
 function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -87,6 +88,8 @@ function Navbar() {
               <Link
                 key={link.path}
                 to={link.path}
+                onMouseEnter={link.path === "/transactions" ? prefetchTransactions : undefined}
+                onTouchStart={link.path === "/transactions" ? prefetchTransactions : undefined}
                 className={`relative px-4 py-2 text-sm font-medium transition-colors ${
                   location.pathname === link.path ? "text-white" : "text-slate-400 hover:text-white"
                 }`}
@@ -171,6 +174,8 @@ function Navbar() {
                   <Link
                     key={link.path}
                     to={link.path}
+                    onMouseEnter={link.path === "/transactions" ? prefetchTransactions : undefined}
+                    onTouchStart={link.path === "/transactions" ? prefetchTransactions : undefined}
                     onClick={() => setIsOpen(false)}
                     className={`flex items-center gap-4 px-5 py-4 rounded-xl text-base font-medium transition-all ${
                       location.pathname === link.path 

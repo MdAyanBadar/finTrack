@@ -16,27 +16,59 @@ import { X } from "lucide-react";
 
 // Mock API for demonstration
 import api from "../api/api";
+import { useTransactions } from "../api/transactionStore";
 import Insights from "./Insights";
 import LoadingScreen from "./LoadingScreen";
 import NotificationBar from "./NotificationBar";
 import CategoryAnalysis from "./CategoryAnalysis";
 import CashFlowAnalysis from "./CashFlowAnalysis";
 import SpendingCalendar from "./SpendingCalendar";
+import {
+  getPayCycle,
+  getCycleStart,
+  isInCycle,
+  toDateKey,
+  getCycleHistory,
+  getSavedFromCycles,
+  getUpcoming,
+} from "../utils/payCycle";
+import UpcomingBills from "./UpcomingBills";
+import CategoryBudgetsCard from "./CategoryBudgetsCard";
+import CycleReport from "./CycleReport";
+import SpendingTrends from "./SpendingTrends";
 
 function Home() {
   /* =========================
      STATE (BACKEND SOURCE)
   ========================= */
-  const [transactions, setTransactions] = useState([]);
+  const { transactions, loading: txLoading } = useTransactions();
   const [budget, setBudget] = useState(0);
   const [goal, setGoal] = useState(0);
+  const [salaryDay, setSalaryDay] = useState(1);
+  const [recurring, setRecurring] = useState([]);
+  const [categoryLimits, setCategoryLimits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
+  // Current salary-to-salary cycle; all dashboard figures use only these transactions
+  const cycle = useMemo(() => getPayCycle(salaryDay), [salaryDay]);
+  const cycleTransactions = useMemo(
+    () => transactions.filter((t) => isInCycle(t.date, cycle)),
+    [transactions, cycle]
+  );
+  const history = useMemo(
+    () => getCycleHistory(transactions, salaryDay),
+    [transactions, salaryDay]
+  );
+  const upcoming = useMemo(
+    () => getUpcoming(recurring, cycle.end),
+    [recurring, cycle]
+  );
+
   const { categoryData, totalExpense } = useMemo(() => {
     // 1. Filter for expenses only
-    const expenses = transactions.filter((t) => t.amount < 0);
+    const expenses = cycleTransactions.filter((t) => t.amount < 0);
 
     // 2. Group by category
     const grouped = expenses.reduce((acc, t) => {
@@ -53,7 +85,7 @@ function Home() {
     const totalExpense = categoryData.reduce((sum, item) => sum + item.value, 0);
 
     return { categoryData, totalExpense };
-  }, [transactions]);
+  }, [cycleTransactions]);
 
   /* =========================
      FETCH DASHBOARD DATA
@@ -61,14 +93,19 @@ function Home() {
   useEffect(() => {
   const fetchDashboard = async () => {
     try {
-      const [txRes, budgetRes] = await Promise.all([
-        api.get("/transactions"),
+      const [budgetRes, recurringRes, limitsRes] = await Promise.all([
         api.get("/budget"),
+        // Optional extras: the dashboard still loads if these fail
+        api.get("/recurring").catch(() => ({ data: [] })),
+        api.get("/budget/categories").catch(() => ({ data: [] })),
       ]);
 
-      setTransactions(txRes.data || []);
+      setRecurring(recurringRes.data || []);
+      setCategoryLimits(limitsRes.data || []);
+
       setBudget(budgetRes.data?.monthlyBudget ?? 0);
       setGoal(budgetRes.data?.savingsGoal ?? 0);
+      setSalaryDay(budgetRes.data?.salaryDay ?? 1);
     } catch (err) {
       console.error("Dashboard fetch failed", err);
     } finally {
@@ -84,7 +121,7 @@ function Home() {
 
 
 
-  if (loading) {
+  if (loading || txLoading) {
     return (
       <LoadingScreen message="Preparing your dashboard..." />
     );
@@ -93,19 +130,20 @@ function Home() {
   /* =========================
      CALCULATIONS
   ========================= */
-const totalIncome = transactions
+const totalIncome = cycleTransactions
   .filter((t) => t.amount > 0)
   .reduce((acc, t) => acc + t.amount, 0);
 
-const totalSpent = transactions
+const totalSpent = cycleTransactions
   .filter((t) => t.amount < 0)
   .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
 // ✅ FIXED
 const balance = budget + totalIncome - totalSpent;
 
-// ✅ REAL savings
-const savings = Math.max(0, balance);
+// ✅ REAL savings: unspent budget from every finished pay cycle is moved to savings,
+// so goal progress keeps building across cycles
+const savings = getSavedFromCycles(history, budget);
 
 // ✅ Goal progress
 const goalProgress =
@@ -122,19 +160,18 @@ const goalProgress =
      DAILY BUDGET
   ========================= */
   const now = new Date();
-  const daysInMonth = new Date(
-    now.getFullYear(),
-    now.getMonth() + 1,
-    0
-  ).getDate();
-
-  const remainingDays = daysInMonth - now.getDate() + 1;
+  const remainingDays = cycle.remainingDays; // days left until next salary, incl. today
+  // Money already promised to upcoming bills isn't available to spend day-to-day
+  const upcomingDue = upcoming
+    .filter((u) => u.amount < 0)
+    .reduce((acc, u) => acc + Math.abs(u.amount), 0);
+  const spendable = balance - upcomingDue;
   const dailyBudget =
-    remainingDays > 0 && balance > 0 ? balance / remainingDays : 0;
+    remainingDays > 0 && spendable > 0 ? spendable / remainingDays : 0;
 
-  const todayStr = now.toISOString().slice(0, 10);
-  const todaySpent = transactions
-    .filter((t) => t.date?.startsWith(todayStr) && t.amount < 0)
+  const todayStr = toDateKey(now);
+  const todaySpent = cycleTransactions
+    .filter((t) => t.date && toDateKey(t.date) === todayStr && t.amount < 0)
     .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
   const dailyProgressPercent =
@@ -151,7 +188,7 @@ const goalProgress =
   /* =========================
      CATEGORY PIE DATA
   ========================= */
-  const categoryTotals = transactions.reduce((acc, t) => {
+  const categoryTotals = cycleTransactions.reduce((acc, t) => {
     if (t.amount < 0) {
       acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount);
     }
@@ -168,17 +205,25 @@ const goalProgress =
   /* =========================
      MONTHLY BAR DATA
   ========================= */
+  // Grouped by pay cycle; labelled by the cycle's start date
   const monthlyData = transactions.reduce((acc, t) => {
-    const month = new Date(t.date).toLocaleString("en-IN", {
-      month: "short",
-    });
-    if (!acc[month]) acc[month] = { month, income: 0, expense: 0 };
-    if (t.amount > 0) acc[month].income += t.amount;
-    else acc[month].expense += Math.abs(t.amount);
+    const start = getCycleStart(t.date, salaryDay);
+    const key = toDateKey(start);
+    if (!acc[key]) {
+      const month =
+        salaryDay === 1
+          ? start.toLocaleString("en-IN", { month: "short", year: "2-digit" })
+          : start.toLocaleString("en-IN", { day: "numeric", month: "short" });
+      acc[key] = { key, month, income: 0, expense: 0 };
+    }
+    if (t.amount > 0) acc[key].income += t.amount;
+    else acc[key].expense += Math.abs(t.amount);
     return acc;
   }, {});
 
-  const monthlyChartData = Object.values(monthlyData);
+  const monthlyChartData = Object.values(monthlyData).sort((a, b) =>
+    a.key.localeCompare(b.key)
+  );
 
   /* =========================
      CALENDAR DATA
@@ -273,7 +318,7 @@ const goalProgress =
       income={totalIncome}
       expenses={Math.abs(totalSpent)}
       savings={savings}
-      transactions={transactions}
+      transactions={cycleTransactions}
     />
   </div>
         {/* Header */}
@@ -286,7 +331,9 @@ const goalProgress =
             Dashboard
           </h1>
           <p className="text-lg text-gray-400">
-            Track your finances and achieve your goals
+            Pay cycle: <span className="text-white font-medium">{cycle.label}</span>
+            {" · "}
+            {remainingDays} {remainingDays === 1 ? "day" : "days"} to salary
           </p>
         </div>
 
@@ -304,7 +351,7 @@ const goalProgress =
               <p className="text-4xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent mb-2">
                 {formatINR(budget)}
               </p>
-              <p className="text-sm text-gray-400">Starting balance for the month</p>
+              <p className="text-sm text-gray-400">Starting balance for this pay cycle</p>
             </div>
           </div>
 
@@ -382,9 +429,30 @@ const goalProgress =
           ))}
         </div>
 
+        {/* UPCOMING + CATEGORY LIMITS: only once the user has set some up */}
+        {(recurring.length > 0 || categoryLimits.length > 0) && (
+          <div className={`grid grid-cols-1 gap-6 mb-8 ${recurring.length > 0 && categoryLimits.length > 0 ? "lg:grid-cols-2" : ""}`}>
+            {recurring.length > 0 && (
+              <UpcomingBills upcoming={upcoming} cycle={cycle} balance={balance} formatINR={formatINR} />
+            )}
+            {categoryLimits.length > 0 && (
+              <CategoryBudgetsCard
+                limits={categoryLimits}
+                spentByCategory={Object.fromEntries(categoryData.map((c) => [c.name, c.value]))}
+                formatINR={formatINR}
+              />
+            )}
+          </div>
+        )}
+
+        {/* LAST CYCLE REPORT */}
+        <CycleReport history={history} budget={budget} formatINR={formatINR} />
+
         {/* CALENDAR */}
         <SpendingCalendar 
           transactions={transactions} 
+          salaryDay={salaryDay}
+          budget={budget}
           dailyBudget={dailyBudget} 
           formatINR={formatINR} 
         />
@@ -476,11 +544,15 @@ const goalProgress =
         <section className="grid grid-cols-1 gap-8">
            <CashFlowAnalysis monthlyChartData={monthlyChartData} />
         </section>
+
+        {/* TRENDS */}
+        <SpendingTrends history={history} formatINR={formatINR} />
         {/* INSIGHTS */}
         <Insights 
           budget={budget} 
           goal={goal} 
-          transactions={transactions} 
+          savings={savings}
+          transactions={cycleTransactions} 
         />
       </div>
     </div>

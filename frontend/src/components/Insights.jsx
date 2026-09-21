@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api/api";
 
-function Insights({ budget = 0, goal = 0, transactions = [] }) {
+function Insights({ budget = 0, goal = 0, savings: totalSavings, transactions = [] }) {
   const [apiInsights, setApiInsights] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -36,7 +36,8 @@ function Insights({ budget = 0, goal = 0, transactions = [] }) {
 
     // ✅ TRUE balance (Starting budget + income - expenses)
     const balance = budget + totalIncome - totalSpent;
-    const savings = Math.max(0, balance);
+    // Prefer all-time savings from the dashboard; `transactions` may be one pay cycle only
+    const savings = totalSavings ?? Math.max(0, balance);
 
     // ✅ PROJECTED MONTHLY SAVINGS
     // Logic: If you budgeted 7000 and spent 4934, you are saving 2066/month.
@@ -105,7 +106,7 @@ function Insights({ budget = 0, goal = 0, transactions = [] }) {
         emoji: "💎",
       },
     ];
-  }, [budget, goal, transactions]);
+  }, [budget, goal, totalSavings, transactions]);
 
   const insights = apiInsights ?? computedInsights;
 

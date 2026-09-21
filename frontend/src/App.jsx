@@ -12,6 +12,7 @@ import Register from "./components/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Profile from "./components/Profile";
 import Footer from "./components/Footer";
+import QuickAdd from "./components/QuickAdd";
 
 /* =========================
    ANIMATED ROUTES
@@ -35,7 +36,7 @@ function AnimatedRoutes({
   const pageTransition = {
     type: "tween",
     ease: "anticipate",
-    duration: 0.35,
+    duration: 0.2,
   };
 
   return (
@@ -143,6 +144,7 @@ function App() {
         />
       </main>
       <Footer />
+      <QuickAdd />
     </div>
   );
 }

@@ -1,27 +1,57 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Calendar as CalendarIcon, ChevronRight, ChevronLeft } from "lucide-react";
+import { getPayCycle, isInCycle, toDateKey } from "../utils/payCycle";
 
-const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
+const SpendingCalendar = ({ transactions, salaryDay = 1, budget = 0, dailyBudget, formatINR }) => {
   const [selectedDay, setSelectedDay] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [cycleOffset, setCycleOffset] = useState(0); // 0 = current pay cycle, -1 = previous, ...
 
-  const now = new Date();
-  const currentMonthName = now.toLocaleString("en-IN", { month: "long" });
-  const currentYear = now.getFullYear();
+  const todayKey = toDateKey(new Date());
 
-  // Helper: Get days in month and starting offset
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  // Pick a date mid-cycle and shift it by whole months, so short months
+  // (salary day clamped to the month's last day) can't land in the same cycle twice
+  const currentCycle = getPayCycle(salaryDay);
+  const mid = currentCycle.start;
+  const cycle = getPayCycle(
+    salaryDay,
+    new Date(mid.getFullYear(), mid.getMonth() + cycleOffset, mid.getDate() + 15)
+  );
+  const isCurrentCycle = cycleOffset === 0;
 
-  const calendarDays = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const emptyDays = Array.from({ length: firstDayOfMonth }, (_, i) => i);
+  const cycleTransactions = transactions.filter((t) => isInCycle(t.date, cycle));
+  const cycleSpent = cycleTransactions
+    .filter((t) => t.amount < 0)
+    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
+
+  // Past cycles are coloured against an even daily share of the budget
+  const dayLimit = isCurrentCycle
+    ? dailyBudget
+    : budget > 0
+      ? budget / cycle.totalDays
+      : dailyBudget;
+
+  const earliest = transactions.reduce(
+    (min, t) => (t.date && new Date(t.date) < min ? new Date(t.date) : min),
+    new Date()
+  );
+  const canGoBack = cycle.start > earliest;
+
+  // Every date in the pay cycle (salary day -> day before next salary day)
+  const calendarDays = Array.from({ length: cycle.totalDays }, (_, i) =>
+    new Date(cycle.start.getFullYear(), cycle.start.getMonth(), cycle.start.getDate() + i)
+  );
+  const emptyDays = Array.from({ length: cycle.start.getDay() }, (_, i) => i);
+
+  const formatDayTitle = (date) =>
+    date.toLocaleDateString("en-IN", { day: "numeric", month: "long" });
 
   // Data Fetcher for specific day
-  const getSpendingForDay = (day) => {
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const dayTransactions = transactions.filter(
-      (t) => t.date?.startsWith(dateStr) && t.amount < 0
+  const getSpendingForDay = (date) => {
+    const dateStr = toDateKey(date);
+    const dayTransactions = cycleTransactions.filter(
+      (t) => t.date && toDateKey(t.date) === dateStr && t.amount < 0
     );
     const totalSpent = dayTransactions.reduce((acc, t) => acc + Math.abs(t.amount), 0);
     return { totalSpent, transactions: dayTransactions };
@@ -49,13 +79,39 @@ const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
             </div>
             <div>
               <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Calendar</h2>
-              <p className="text-xs sm:text-sm text-gray-500 font-medium">{currentMonthName} {currentYear}</p>
+              <p className="text-xs sm:text-sm text-gray-500 font-medium">{cycle.label}</p>
+              <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+                Spent <span className="font-bold text-rose-400">{formatINR(cycleSpent)}</span>
+                {budget > 0 && <span className="text-gray-500"> of {formatINR(budget)}</span>}
+              </p>
             </div>
           </div>
           
-          <div className="flex gap-2">
-             <button className="p-2 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors opacity-50 cursor-not-allowed"><ChevronLeft className="w-4 h-4 text-white" /></button>
-             <button className="p-2 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors opacity-50 cursor-not-allowed"><ChevronRight className="w-4 h-4 text-white" /></button>
+          <div className="flex items-center gap-2">
+             {!isCurrentCycle && (
+               <button
+                 onClick={() => setCycleOffset(0)}
+                 className="px-3 py-2 text-xs font-bold text-indigo-300 bg-indigo-500/10 rounded-lg border border-indigo-500/20 hover:bg-indigo-500/20 transition-colors"
+               >
+                 Today
+               </button>
+             )}
+             <button
+               onClick={() => setCycleOffset((o) => o - 1)}
+               disabled={!canGoBack}
+               aria-label="Previous pay cycle"
+               className="p-2 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+             >
+               <ChevronLeft className="w-4 h-4 text-white" />
+             </button>
+             <button
+               onClick={() => setCycleOffset((o) => o + 1)}
+               disabled={isCurrentCycle}
+               aria-label="Next pay cycle"
+               className="p-2 bg-white/5 rounded-lg border border-white/5 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+             >
+               <ChevronRight className="w-4 h-4 text-white" />
+             </button>
           </div>
         </div>
 
@@ -65,7 +121,7 @@ const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
           <div className="grid grid-cols-7 mb-4">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <div key={day} className="text-center text-[10px] sm:text-xs font-black text-gray-600 uppercase tracking-widest">
-                {day.charAt(0)} {/* Shows S M T W T F S on small mobile */}
+                {day.charAt(0)}{/* Shows S M T W T F S on small mobile */}
                 <span className="hidden sm:inline">{day.slice(1)}</span>
               </div>
             ))}
@@ -77,22 +133,24 @@ const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
               <div key={`empty-${i}`} className="aspect-square opacity-0" />
             ))}
 
-            {calendarDays.map((day) => {
+            {calendarDays.map((day, i) => {
               const { totalSpent } = getSpendingForDay(day);
-              const isToday = day === now.getDate();
+              const isToday = toDateKey(day) === todayKey;
+              // Show the month on the first cell and whenever the month changes
+              const showMonth = i === 0 || day.getDate() === 1;
               const hasSpending = totalSpent > 0;
               
               // Intensity Logic
               let statusColor = "bg-white/[0.05]";
               if (hasSpending) {
-                if (totalSpent > dailyBudget * 1.2) statusColor = "bg-rose-500/20 border-rose-500/30";
-                else if (totalSpent > dailyBudget) statusColor = "bg-amber-500/20 border-amber-500/30";
+                if (totalSpent > dayLimit * 1.2) statusColor = "bg-rose-500/20 border-rose-500/30";
+                else if (totalSpent > dayLimit) statusColor = "bg-amber-500/20 border-amber-500/30";
                 else statusColor = "bg-emerald-500/20 border-emerald-500/30";
               }
 
               return (
                 <motion.button
-                  key={day}
+                  key={toDateKey(day)}
                   whileTap={hasSpending ? { scale: 0.95 } : {}}
                   onClick={() => handleDayClick(day)}
                   className={`relative aspect-square rounded-lg sm:rounded-2xl border flex flex-col items-center justify-center transition-all duration-300 
@@ -102,8 +160,13 @@ const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
                   `}
                 >
                   <span className={`text-xs sm:text-base font-bold ${isToday ? "text-indigo-400" : "text-white"}`}>
-                    {day}
+                    {day.getDate()}
                   </span>
+                  {showMonth && (
+                    <span className="absolute top-0.5 left-1 sm:top-1 sm:left-2 text-[8px] sm:text-[10px] font-black uppercase text-indigo-400">
+                      {day.toLocaleString("en-IN", { month: "short" })}
+                    </span>
+                  )}
 
                   {/* Desktop Amount / Mobile Dot */}
                   {hasSpending && (
@@ -112,7 +175,7 @@ const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
                         ₹{(totalSpent).toLocaleString("en-IN")}
                       </span>
                       <div className={`sm:hidden w-1.5 h-1.5 rounded-full mt-1 
-                        ${totalSpent > dailyBudget ? 'bg-rose-500' : 'bg-emerald-500'}`} 
+                        ${totalSpent > dayLimit ? 'bg-rose-500' : 'bg-emerald-500'}`} 
                       />
                     </>
                   )}
@@ -149,7 +212,7 @@ const SpendingCalendar = ({ transactions, dailyBudget, formatINR }) => {
               <div className="p-6 sm:p-8">
                 <div className="flex justify-between items-start mb-8">
                   <div>
-                    <h3 className="text-2xl font-black text-white">{selectedDay.day} {currentMonthName}</h3>
+                    <h3 className="text-2xl font-black text-white">{formatDayTitle(selectedDay.day)}</h3>
                     <p className="text-sm text-gray-500 font-bold uppercase tracking-widest mt-1">Daily Summary</p>
                   </div>
                   <div className="text-right">

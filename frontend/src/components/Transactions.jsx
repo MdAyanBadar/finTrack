@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import api from "../api/api";
+import { useTransactions } from "../api/transactionStore";
 import LoadingScreen from "./LoadingScreen";
 
 function Transactions() {
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Shared cache: opens instantly with the last loaded list, refreshes in the background
+  const { transactions, setTransactions, loading, refresh } = useTransactions();
   const [isAdding, setIsAdding] = useState(false);
 
   // Form state
@@ -53,20 +54,8 @@ function Transactions() {
   /* ============================
      API OPERATIONS
   ============================ */
-  const fetchTransactions = async () => {
-    try {
-      const res = await api.get("/transactions");
-      setTransactions(res.data);
-    } catch (err) {
-      console.error("Fetch failed:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTransactions();
-  }, []);
+  const fetchTransactions = () =>
+    refresh().catch((err) => console.error("Fetch failed:", err));
 
   const addTransaction = async () => {
     if (!text || !amount) return;
@@ -274,7 +263,12 @@ function Transactions() {
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-white/[0.05] rounded-xl flex items-center justify-center text-xl">{getCategoryIcon(t.category)}</div>
                   <div>
-                    <h4 className="text-white font-bold text-lg">{t.title}</h4>
+                    <h4 className="text-white font-bold text-lg">
+                      {t.title}
+                      {t.recurringId && (
+                        <span title="Added automatically by a recurring item" className="ml-2 align-middle text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-300 border border-orange-500/20">🔁 Recurring</span>
+                      )}
+                    </h4>
                     <p className="text-sm text-gray-500">{new Date(t.date).toLocaleDateString()} • {t.category}</p>
                   </div>
                 </div>
