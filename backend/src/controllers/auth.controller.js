@@ -3,17 +3,26 @@ import prisma from "../prisma.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
+import { JWT_SECRET } from "../config.js";
 
 // REGISTER
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const name = String(req.body.name ?? "").trim();
+    const email = String(req.body.email ?? "").trim().toLowerCase();
+    const password = String(req.body.password ?? "");
 
     if (!name || !email || !password)
       return res.status(400).json({ message: "All fields required" });
+    if (name.length > 60)
+      return res.status(400).json({ message: "Name is too long" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
+      return res.status(400).json({ message: "Enter a valid email address" });
+    if (password.length < 8 || password.length > 200)
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    // Case-insensitive: older accounts may have been saved with capitals
+    const existing = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
     if (existing)
       return res.status(400).json({ message: "User already exists" });
 
@@ -39,9 +48,12 @@ export const register = async (req, res) => {
 // LOGIN
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = String(req.body.email ?? "").trim().toLowerCase();
+    const password = String(req.body.password ?? "");
+    if (!email || !password)
+      return res.status(400).json({ message: "Email and password are required" });
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
     if (!user)
       return res.status(400).json({ message: "Invalid credentials" });
 

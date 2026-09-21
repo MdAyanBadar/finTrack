@@ -102,13 +102,26 @@ const parseRecurring = (body) => {
   };
 };
 
+// Optional "count payments from this date" (YYYY-MM-DD, e.g. the pay cycle start)
+// so bills that already fell due this cycle are included. Up to ~2 months back.
+const parseStartFrom = (value) => {
+  if (value == null) return { startFrom: null };
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const d = m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if (!d || Number.isNaN(d.getTime()) || d > new Date() || d < new Date(Date.now() - 62 * 24 * 3600e3))
+    return { error: "Start date must be within the last 2 months" };
+  return { startFrom: d };
+};
+
 export const createRecurring = async (req, res) => {
   const { error, data } = parseRecurring(req.body);
   if (error) return res.status(400).json({ message: error });
+  const { error: startError, startFrom } = parseStartFrom(req.body.startFrom);
+  if (startError) return res.status(400).json({ message: startError });
 
   try {
     const item = await prisma.recurringTransaction.create({
-      data: { ...data, userId: req.userId, startDate: new Date() },
+      data: { ...data, userId: req.userId, startDate: startFrom ?? new Date() },
     });
 
     await postDueRecurring(req.userId);
@@ -123,13 +136,32 @@ export const createRecurring = async (req, res) => {
 export const updateRecurring = async (req, res) => {
   const { error, data } = parseRecurring(req.body);
   if (error) return res.status(400).json({ message: error });
+  const { error: startError, startFrom } = parseStartFrom(req.body.startFrom);
+  if (startError) return res.status(400).json({ message: startError });
 
   try {
     const { count } = await prisma.recurringTransaction.updateMany({
-      where: { id: req.params.id, userId: req.userId },
-      data,
+      where: {
+        id: req.params.id,
+        userId: req.userId,
+        // Moving the start only ever goes earlier (to catch missed payments)
+        ...(startFrom && { startDate: { gt: startFrom } }),
+      },
+      // Re-check from the new start; entries already added are skipped by the
+      // unique (recurringId, date) index
+      data: startFrom ? { ...data, startDate: startFrom, lastPosted: null } : data,
     });
-    if (count === 0) return res.status(404).json({ message: "Not found" });
+    if (count === 0 && startFrom) {
+      // Already counted from that date: just apply the other changes
+      await prisma.recurringTransaction.updateMany({
+        where: { id: req.params.id, userId: req.userId },
+        data,
+      });
+    }
+    const exists = await prisma.recurringTransaction.count({
+      where: { id: req.params.id, userId: req.userId },
+    });
+    if (!exists) return res.status(404).json({ message: "Not found" });
 
     // A new day earlier in the month may already be due
     await postDueRecurring(req.userId);

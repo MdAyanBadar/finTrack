@@ -1,335 +1,270 @@
-import { useState, useEffect, useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Search, ArrowLeftRight, Repeat, Mail } from "lucide-react";
 import api from "../api/api";
-import { useTransactions } from "../api/transactionStore";
-import LoadingScreen from "./LoadingScreen";
+import { useTransactions, deleteWithUndo } from "../api/transactionStore";
+import { toast } from "../utils/toast";
+import { useResource } from "../api/resourceStore";
+import { getPayCycle, isInCycle, toDateKey } from "../utils/payCycle";
+import { knownCategories } from "../utils/categories";
+import { formatINR, dayLabel } from "../utils/format";
+import { openQuickAdd } from "../utils/quickAdd";
+import {
+  Page, PageHeader, Card, Chip, Sheet, Segmented, Field, Input, Button, EmptyState, Skeleton, inputClass,
+} from "./ui";
+import TransactionRow from "./TransactionRow";
+import SwipeRow from "./SwipeRow";
+
+const PERIODS = [
+  { value: "cycle", label: "This cycle" },
+  { value: "last", label: "Last cycle" },
+  { value: "all", label: "All time" },
+];
+const TYPES = [
+  { value: "all", label: "All" },
+  { value: "expense", label: "Spent" },
+  { value: "income", label: "Received" },
+];
+
+// datetime-local value in local time
+const toLocalInput = (value) => {
+  const d = new Date(value);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 function Transactions() {
-  // Shared cache: opens instantly with the last loaded list, refreshes in the background
   const { transactions, setTransactions, loading, refresh } = useTransactions();
-  const [isAdding, setIsAdding] = useState(false);
-
-  // Form state
-  const [text, setText] = useState("");
-  const [amount, setAmount] = useState("");
-  const [type, setType] = useState("expense");
-  const [category, setCategory] = useState("General");
-  const [customCategory, setCustomCategory] = useState("");
-
-  // Filters
+  const { data: budget } = useResource("/budget", { salaryDay: 1 });
   const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState("all");
-  const [filterCategory, setFilterCategory] = useState("all");
-  const [sortBy, setSortBy] = useState("date");
+  const [period, setPeriod] = useState("cycle");
+  const [type, setType] = useState("all");
+  const [category, setCategory] = useState("all");
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  // Edit modal
-  const [editingTx, setEditingTx] = useState(null);
+  const salaryDay = budget?.salaryDay ?? 1;
+  const cycle = getPayCycle(salaryDay);
+  const lastCycle = getPayCycle(salaryDay, new Date(cycle.start.getTime() - 86400000));
 
-  /* ============================
-     CATEGORY MANAGEMENT
-  ============================ */
-  const defaultCategories = [
-    { name: "General", icon: "📝", color: "text-gray-400" },
-    { name: "Food", icon: "🍔", color: "text-yellow-400" },
-    { name: "Travel", icon: "✈️", color: "text-blue-400" },
-    { name: "Shopping", icon: "🛍️", color: "text-pink-400" },
-    { name: "Bills", icon: "💡", color: "text-orange-400" },
-    { name: "Entertainment", icon: "🎮", color: "text-purple-400" },
-  ];
+  const inPeriod = useMemo(() => {
+    if (period === "all") return transactions;
+    const c = period === "cycle" ? cycle : lastCycle;
+    return transactions.filter((t) => isInCycle(t.date, c));
+  }, [transactions, period, cycle.start.getTime()]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [categories, setCategories] = useState(() => {
-    const saved = localStorage.getItem("custom_categories");
-    return saved ? JSON.parse(saved) : defaultCategories;
-  });
+  const categories = useMemo(
+    () => [...new Set(inPeriod.map((t) => t.category))].sort(),
+    [inPeriod]
+  );
 
-  useEffect(() => {
-    localStorage.setItem("custom_categories", JSON.stringify(categories));
-  }, [categories]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return inPeriod
+      .filter((t) => type === "all" || (type === "expense" ? t.amount < 0 : t.amount > 0))
+      .filter((t) => category === "all" || t.category === category)
+      .filter((t) => !q || t.title.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [inPeriod, search, type, category]);
 
-  const getCategoryIcon = (name) =>
-    categories.find((c) => c.name === name)?.icon || "📝";
-
-  const getCategoryColor = (name) =>
-    categories.find((c) => c.name === name)?.color || "text-gray-400";
-
-  /* ============================
-     API OPERATIONS
-  ============================ */
-  const fetchTransactions = () =>
-    refresh().catch((err) => console.error("Fetch failed:", err));
-
-  const addTransaction = async () => {
-    if (!text || !amount) return;
-
-    let finalCategory = category;
-    if (category === "Custom") {
-      if (!customCategory) return;
-      finalCategory = customCategory.trim();
-      
-      // Save for next time if it doesn't exist
-      if (!categories.find(c => c.name.toLowerCase() === finalCategory.toLowerCase())) {
-        setCategories(prev => [...prev, { name: finalCategory, icon: "✨", color: "text-indigo-400" }]);
-      }
+  // Group by calendar day (local time)
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const t of filtered) {
+      const key = toDateKey(t.date);
+      if (!map.has(key)) map.set(key, { key, date: t.date, items: [], net: 0 });
+      const g = map.get(key);
+      g.items.push(t);
+      g.net += t.amount;
     }
+    return [...map.values()];
+  }, [filtered]);
 
-    const payload = {
-      title: text,
-      amount: type === "expense" ? -Math.abs(Number(amount)) : Math.abs(Number(amount)),
-      type,
-      category: finalCategory,
-      date: new Date().toISOString(),
-    };
+  const totalOut = filtered.filter((t) => t.amount < 0).reduce((a, t) => a - t.amount, 0);
+  const totalIn = filtered.filter((t) => t.amount > 0).reduce((a, t) => a + t.amount, 0);
 
-    try {
-      setIsAdding(true);
-      const res = await api.post("/transactions", payload);
-      setTransactions((prev) => [res.data, ...prev]);
-      // Reset Form
-      setText("");
-      setAmount("");
-      setCategory("General");
-      setCustomCategory("");
-    } catch (err) {
-      console.error("Add failed:", err);
-    } finally {
-      setIsAdding(false);
-    }
+  const startEdit = (t) => {
+    setError("");
+    setEditing({
+      id: t.id,
+      title: t.title,
+      amount: String(Math.abs(t.amount)),
+      type: t.amount < 0 ? "expense" : "income",
+      category: t.category,
+      date: toLocalInput(t.date),
+      recurring: Boolean(t.recurringId),
+      source: t.source,
+      originalCategory: t.category,
+      remember: Boolean(t.source),
+    });
   };
 
-  const deleteTransaction = async (id) => {
-    try {
-      await api.delete(`/transactions/${id}`);
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
-    } catch (err) {
-      console.error("Delete failed:", err);
+  const save = async () => {
+    const value = Number(editing.amount);
+    if (!editing.title.trim() || !(value > 0) || !editing.category.trim()) {
+      setError("Enter a title, an amount above 0 and a category");
+      return;
     }
-  };
-
-  const saveEdit = async () => {
     try {
-      await api.put(`/transactions/${editingTx.id}`, {
-        title: editingTx.title,
-        amount: editingTx.amount,
-        category: editingTx.category,
+      setSaving(true);
+      const res = await api.put(`/transactions/${editing.id}`, {
+        title: editing.title.trim(),
+        amount: editing.type === "expense" ? -value : value,
+        type: editing.type,
+        category: editing.category.trim(),
+        date: new Date(editing.date).toISOString(),
+        rememberPayee: categoryChanged && editing.remember,
       });
-      setEditingTx(null);
-      fetchTransactions();
+      const { rememberedCount, ...saved } = res.data;
+      if (rememberedCount > 0) {
+        // Earlier imports from this payee were re-categorised on the server too
+        refresh().catch(() => {});
+      } else {
+        setTransactions((prev) => prev.map((t) => (t.id === saved.id ? saved : t)));
+      }
+      if (categoryChanged && editing.remember) {
+        toast(`${saved.title} will always go to ${saved.category}${rememberedCount ? ` · ${rememberedCount} earlier updated` : ""}`);
+      }
+      setEditing(null);
     } catch (err) {
-      console.error("Update failed:", err);
+      setError(err.response?.data?.message || "Couldn't save changes");
+    } finally {
+      setSaving(false);
     }
   };
 
-  /* ============================
-     COMPUTED DATA
-  ============================ */
-  const filteredTransactions = useMemo(() => {
-    let data = [...transactions];
-    if (search) data = data.filter(t => t.title.toLowerCase().includes(search.toLowerCase()));
-    if (filterType !== "all") data = data.filter(t => t.type === filterType);
-    if (filterCategory !== "all") data = data.filter(t => t.category === filterCategory);
-    if (sortBy === "amount") data.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-    else data.sort((a, b) => new Date(b.date) - new Date(a.date));
-    return data;
-  }, [transactions, search, filterType, filterCategory, sortBy]);
+  // Deleted at once, with Undo for 5 seconds
+  const removeTx = (t) => {
+    const undo = deleteWithUndo(t, { onError: () => toast("Couldn't delete it. Try again.", "error") });
+    toast(`Deleted ${t.title}`, { action: { label: "Undo", onClick: undo } });
+  };
 
-  const formatINR = (amt) => amt.toLocaleString("en-IN", { style: "currency", currency: "INR" });
-  const totalIncome = filteredTransactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const totalExpense = Math.abs(filteredTransactions.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0));
+  const remove = () => {
+    const t = transactions.find((x) => x.id === editing.id);
+    setEditing(null);
+    if (t) removeTx(t);
+  };
 
-  if (loading) return <LoadingScreen message="Loading Financial Data..." />;
+  const categoryChanged = editing && editing.category.trim() && editing.category.trim() !== editing.originalCategory;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 relative overflow-hidden">
-      {/* Background Decor */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl animate-pulse delay-700"></div>
+    <Page>
+      <PageHeader title="Activity"
+        subtitle={period === "cycle" ? cycle.label : period === "last" ? lastCycle.label : "Everything you've recorded"} />
+
+      {/* Totals for the current view */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <Card className="p-4">
+          <p className="text-[13px] text-ink-3">Spent</p>
+          <p className="tabular text-xl font-semibold mt-1">{formatINR(totalOut)}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-[13px] text-ink-3">Received</p>
+          <p className={`tabular text-xl font-semibold mt-1 ${totalIn > 0 ? "text-pos" : ""}`}>{formatINR(totalIn)}</p>
+        </Card>
       </div>
 
-      <div className="relative z-10 max-w-6xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="inline-flex items-center gap-3 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full backdrop-blur-sm mb-4">
-            <div className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"></div>
-            <span className="text-sm text-indigo-300 font-medium">Finance Reimagined</span>
-          </div>
-          <h2 className="text-4xl sm:text-5xl font-bold text-white mb-2">Transactions</h2>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-          <StatCard title="Total Volume" value={filteredTransactions.length} icon="📊" color="blue" />
-          <StatCard title="Total Income" value={formatINR(totalIncome)} icon="💰" color="green" />
-          <StatCard title="Total Expense" value={formatINR(totalExpense)} icon="💸" color="red" />
-        </div>
-
-        {/* ADD TRANSACTION FORM */}
-        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-6 sm:p-8 mb-8">
-          <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-            <span className="p-2 bg-indigo-500/20 rounded-lg">➕</span> Add New Transaction
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-400 ml-1">Description</label>
-              <input 
-                placeholder="What for?" 
-                value={text} 
-                onChange={(e) => setText(e.target.value)} 
-                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-400 ml-1">Amount</label>
-              <input 
-                type="number" 
-                placeholder="0.00" 
-                value={amount} 
-                onChange={(e) => setAmount(e.target.value)} 
-                className="w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-400 ml-1">Type</label>
-              <div className="relative flex p-1 bg-white/[0.05] border border-white/[0.1] rounded-xl h-[50px]">
-                <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] transition-all duration-300 rounded-lg ${type === 'income' ? 'left-1 bg-green-500/20 border border-green-500/30' : 'left-[calc(50%+1px)] bg-red-500/20 border border-red-500/30'}`} />
-                <button onClick={() => setType('income')} className={`relative z-10 flex-1 text-sm font-bold transition-colors ${type === 'income' ? 'text-green-400' : 'text-gray-500'}`}>Income</button>
-                <button onClick={() => setType('expense')} className={`relative z-10 flex-1 text-sm font-bold transition-colors ${type === 'expense' ? 'text-red-400' : 'text-gray-500'}`}>Expense</button>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-400 ml-1">Category</label>
-              <select 
-                value={category} 
-                onChange={(e) => setCategory(e.target.value)} 
-                className="w-full bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none appearance-none"
-              >
-                {categories.map((c) => (
-                  <option key={c.name} value={c.name} className="bg-slate-900">{c.icon} {c.name}</option>
-                ))}
-                <option value="Custom" className="bg-slate-900">✨ Custom...</option>
-              </select>
-            </div>
-          </div>
-
-          {category === "Custom" && (
-            <div className="mb-6 animate-in slide-in-from-top-2">
-              <label className="text-sm font-medium text-indigo-400 mb-2 block">Custom Category Name</label>
-              <input
-                placeholder="e.g. Health, Gym..."
-                value={customCategory}
-                onChange={(e) => setCustomCategory(e.target.value)}
-                className="w-full sm:w-1/2 bg-indigo-500/10 border border-indigo-500/30 rounded-xl px-4 py-3 text-white outline-none"
-              />
-            </div>
-          )}
-
-          <button
-            onClick={addTransaction}
-            disabled={isAdding}
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50 hover:scale-[1.01] active:scale-[0.99] shadow-lg shadow-indigo-500/20"
-          >
-            {isAdding ? "Adding Transaction..." : "Confirm Transaction"}
-          </button>
-        </div>
-
-        {/* FILTERS SECTION */}
-        <div className="relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-6 mb-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none" />
-            <select value={filterType} onChange={e => setFilterType(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none">
-              <option value="all">All Types</option>
-              <option value="income">Income</option>
-              <option value="expense">Expense</option>
-            </select>
-            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none">
-              <option value="all">All Categories</option>
-              {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-white/[0.05] border border-white/[0.1] rounded-xl px-4 py-3 text-white outline-none">
-              <option value="date">Latest First</option>
-              <option value="amount">Highest Amount</option>
-            </select>
-          </div>
-        </div>
-
-        {/* TRANSACTION LIST */}
-        <div className="space-y-4">
-          {filteredTransactions.map((t) => (
-            <div key={t.id} className="group relative bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-4 sm:p-6 transition-all hover:bg-white/[0.05]">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/[0.05] rounded-xl flex items-center justify-center text-xl">{getCategoryIcon(t.category)}</div>
-                  <div>
-                    <h4 className="text-white font-bold text-lg">
-                      {t.title}
-                      {t.source && (
-                        <span title={`Imported automatically from a bank ${t.source}`} className="ml-2 align-middle text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20">📩 Auto</span>
-                      )}
-                      {t.recurringId && (
-                        <span title="Added automatically by a recurring item" className="ml-2 align-middle text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-orange-500/10 text-orange-300 border border-orange-500/20">🔁 Recurring</span>
-                      )}
-                    </h4>
-                    <p className="text-sm text-gray-500">{new Date(t.date).toLocaleDateString()} • {t.category}</p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between w-full sm:w-auto gap-6">
-                  <div className={`text-xl font-bold ${t.amount > 0 ? "text-green-400" : "text-red-400"}`}>
-                    {t.amount > 0 ? "+" : ""}{formatINR(t.amount)}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setEditingTx(t)} className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg hover:bg-indigo-500/20 transition-colors">✏️</button>
-                    <button onClick={() => deleteTransaction(t.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors">🗑️</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-          {filteredTransactions.length === 0 && (
-            <div className="text-center py-20 bg-white/[0.02] rounded-3xl border border-dashed border-white/10 text-gray-500">
-              No transactions found matching your filters.
-            </div>
-          )}
-        </div>
+      {/* Search + filters */}
+      <div className="relative mb-3">
+        <Search className="w-[18px] h-[18px] text-ink-3 absolute left-4 top-1/2 -translate-y-1/2" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search"
+          aria-label="Search transactions" className={`${inputClass} pl-11`} />
       </div>
-
-      {/* EDIT MODAL (KEEPING YOUR LOGIC) */}
-      {editingTx && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setEditingTx(null)}>
-          <div className="bg-[#0f172a] border border-white/10 rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-2xl font-bold text-white mb-6">Edit Record</h3>
-            <div className="space-y-4">
-              <input value={editingTx.title} onChange={e => setEditingTx({...editingTx, title: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none" />
-              <input type="number" value={Math.abs(editingTx.amount)} onChange={e => setEditingTx({...editingTx, amount: editingTx.type === 'expense' ? -Number(e.target.value) : Number(e.target.value)})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none" />
-              <button onClick={saveEdit} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-500 transition-all">Save Changes</button>
-            </div>
-          </div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
+        {PERIODS.map((p) => <Chip key={p.value} active={period === p.value} onClick={() => setPeriod(p.value)}>{p.label}</Chip>)}
+        <span className="w-px bg-line shrink-0 mx-1" />
+        {TYPES.map((t) => <Chip key={t.value} active={type === t.value} onClick={() => setType(t.value)}>{t.label}</Chip>)}
+      </div>
+      {categories.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0 mt-2 pb-1">
+          <Chip active={category === "all"} onClick={() => setCategory("all")}>All categories</Chip>
+          {categories.map((c) => <Chip key={c} active={category === c} onClick={() => setCategory(c)}>{c}</Chip>)}
         </div>
       )}
-    </div>
-  );
-}
 
-// Sub-component for clean code
-function StatCard({ title, value, icon, color }) {
-  const colors = {
-    blue: "border-blue-500/20 from-blue-500/10",
-    green: "border-green-500/20 from-green-500/10",
-    red: "border-red-500/20 from-red-500/10"
-  };
-  return (
-    <div className={`relative bg-white/[0.03] border ${colors[color]} rounded-2xl p-6 overflow-hidden`}>
-      <div className={`absolute -right-4 -top-4 w-20 h-20 bg-gradient-to-br ${colors[color]} blur-2xl opacity-50`}></div>
-      <div className="relative flex justify-between items-center">
-        <div>
-          <p className="text-xs text-gray-500 uppercase font-bold mb-1">{title}</p>
-          <p className="text-2xl font-bold text-white">{value}</p>
-        </div>
-        <div className="text-3xl">{icon}</div>
+      {/* List */}
+      <div className="mt-6 space-y-6">
+        {loading ? (
+          <>
+            <Skeleton className="h-40" />
+            <Skeleton className="h-28" />
+          </>
+        ) : groups.length === 0 ? (
+          <Card>
+            <EmptyState icon={ArrowLeftRight}
+              title={transactions.length ? "Nothing matches" : "No transactions yet"}
+              text={transactions.length ? "Try a different period, filter or search." : "Tap + to add your first one."}
+              action={!transactions.length && <Button onClick={openQuickAdd}>Add transaction</Button>} />
+          </Card>
+        ) : (
+          groups.map((g) => (
+            <section key={g.key}>
+              <div className="flex items-center justify-between px-1 mb-2 text-[13px]">
+                <span className="font-medium text-ink-2">{dayLabel(g.date)}</span>
+                <span className="tabular text-ink-3">{formatINR(g.net, { sign: g.net > 0 })}</span>
+              </div>
+              <Card className="divide-y divide-line/60 overflow-hidden">
+                {g.items.map((t) => (
+                  <SwipeRow key={t.id} onDelete={() => removeTx(t)}>
+                    <TransactionRow t={t} onClick={() => startEdit(t)}
+                      meta={`${t.category} · ${new Date(t.date).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`} />
+                  </SwipeRow>
+                ))}
+              </Card>
+            </section>
+          ))
+        )}
       </div>
-    </div>
+
+      {/* Edit sheet */}
+      <Sheet open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit transaction">
+        {editing && (
+          <div className="space-y-4">
+            {(editing.recurring || editing.source) && (
+              <p className="text-[13px] text-ink-3 flex items-center gap-1.5">
+                {editing.recurring ? <><Repeat className="w-3.5 h-3.5" /> Added by a recurring item</> : <><Mail className="w-3.5 h-3.5" /> Imported from a bank {editing.source}</>}
+              </p>
+            )}
+            <Segmented value={editing.type} onChange={(v) => setEditing({ ...editing, type: v })}
+              options={[{ value: "expense", label: "Expense" }, { value: "income", label: "Income" }]} />
+            <Field label="Amount (₹)">
+              <Input type="number" inputMode="decimal" min="0" step="any" value={editing.amount}
+                onChange={(e) => setEditing({ ...editing, amount: e.target.value })} />
+            </Field>
+            <Field label="Title">
+              <Input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
+            </Field>
+            <Field label="Category">
+              <Input list="edit-categories" value={editing.category}
+                onChange={(e) => setEditing({ ...editing, category: e.target.value })} />
+              <datalist id="edit-categories">
+                {knownCategories(categories).map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </Field>
+            {categoryChanged && (
+              <label className="flex items-start gap-3 p-3 rounded-2xl bg-surface-2 cursor-pointer">
+                <input type="checkbox" checked={editing.remember}
+                  onChange={(e) => setEditing({ ...editing, remember: e.target.checked })}
+                  className="mt-0.5 w-4 h-4 accent-[#8b5cf6]" />
+                <span className="text-sm">
+                  Always use <b>{editing.category.trim()}</b> for <b>{editing.title.trim()}</b>
+                  <span className="block text-[13px] text-ink-3">Applies to future bank imports and updates earlier ones from this payee.</span>
+                </span>
+              </label>
+            )}
+            <Field label="Date & time">
+              <Input type="datetime-local" value={editing.date} className="[color-scheme:dark]"
+                onChange={(e) => setEditing({ ...editing, date: e.target.value })} />
+            </Field>
+            {error && <p className="text-sm text-neg">{error}</p>}
+            <div className="flex gap-3 pt-2">
+              <Button variant="danger" onClick={remove} disabled={saving}>Delete</Button>
+              <Button className="flex-1" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+            </div>
+          </div>
+        )}
+      </Sheet>
+    </Page>
   );
 }
 

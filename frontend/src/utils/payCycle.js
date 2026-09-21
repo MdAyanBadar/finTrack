@@ -122,3 +122,72 @@ export const getUpcoming = (recurring, until, now = new Date()) => {
   }
   return items.sort((a, b) => a.date - b.date);
 };
+
+/* =========================
+   MISSED RECURRING PAYMENT
+   The date a monthly item (on `dayOfMonth`) already fell due in the current
+   pay cycle, before today and before `countedFrom` - i.e. a payment that
+   belongs to this cycle but hasn't been added. null if there isn't one.
+========================= */
+export const missedThisCycle = (dayOfMonth, salaryDay = 1, countedFrom = new Date(), now = new Date()) => {
+  const cycle = getPayCycle(salaryDay, now);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const from = new Date(countedFrom);
+  const fromDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+
+  for (let m = 0; m < 2; m++) {
+    const y = cycle.start.getFullYear();
+    const mo = cycle.start.getMonth() + m;
+    const last = new Date(y, mo + 1, 0).getDate();
+    const date = new Date(y, mo, Math.min(dayOfMonth, last));
+    if (date >= cycle.start && date < today && date < fromDay) return date;
+  }
+  return null;
+};
+
+/* =========================
+   STREAKS
+   Only completed days (before today) and only discretionary spending:
+   automatic recurring bills don't break a streak.
+   - underBudget: consecutive days, ending yesterday, spending at or below the
+     cycle's even daily share of the budget (budget / days in cycle)
+   - noSpendDays: days this pay cycle with no discretionary spending
+   Days before the first transaction ever aren't counted.
+========================= */
+export const getStreaks = (transactions, salaryDay = 1, budget = 0, now = new Date()) => {
+  if (transactions.length === 0) return { underBudget: 0, noSpendDays: 0, noSpendKeys: new Set() };
+
+  const spendByDay = {};
+  let first = now;
+  for (const t of transactions) {
+    const d = new Date(t.date);
+    if (d < first) first = d;
+    if (t.amount < 0 && !t.recurringId) {
+      const k = toDateKey(d);
+      spendByDay[k] = (spendByDay[k] || 0) - t.amount;
+    }
+  }
+  const firstDay = new Date(first.getFullYear(), first.getMonth(), first.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  // Under-budget streak, walking back from yesterday (max 120 days)
+  let underBudget = 0;
+  for (let i = 1; i <= 120; i++) {
+    const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    if (day < firstDay) break;
+    const cycle = getPayCycle(salaryDay, day);
+    const share = budget > 0 ? budget / cycle.totalDays : 0;
+    const spent = spendByDay[toDateKey(day)] || 0;
+    if (budget > 0 ? spent <= share : spent === 0) underBudget += 1;
+    else break;
+  }
+
+  // No-spend days in the current cycle, before today
+  const cycle = getPayCycle(salaryDay, now);
+  const noSpendKeys = new Set();
+  for (let d = new Date(Math.max(cycle.start, firstDay)); d < today; d.setDate(d.getDate() + 1)) {
+    const k = toDateKey(d);
+    if (!spendByDay[k]) noSpendKeys.add(k);
+  }
+  return { underBudget, noSpendDays: noSpendKeys.size, noSpendKeys };
+};

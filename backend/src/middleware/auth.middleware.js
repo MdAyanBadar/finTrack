@@ -1,7 +1,7 @@
 // auth.middleware.js
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "supersecret";
+import { JWT_SECRET } from "../config.js";
 
 export const protect = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];

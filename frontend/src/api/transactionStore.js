@@ -28,8 +28,10 @@ export const loadTransactions = () => {
     inflight = api
       .get("/transactions")
       .then((res) => {
-        publish(res.data || []);
-        return res.data || [];
+        // Hide anything waiting to be deleted (see deleteWithUndo)
+        const data = (res.data || []).filter((t) => !pendingDeletes.has(t.id));
+        publish(data);
+        return data;
       })
       .finally(() => {
         inflight = null;
@@ -60,4 +62,52 @@ export function useTransactions() {
     publish(typeof next === "function" ? next(getCached() ?? []) : next);
 
   return { transactions, setTransactions, loading, refresh: loadTransactions };
+}
+
+/* =========================
+   DELETE WITH UNDO
+   The transaction disappears at once; the server delete is sent after a
+   few seconds unless undone. Pending deletes are flushed if the page closes.
+========================= */
+const pendingDeletes = new Map(); // id -> { timer, tx }
+
+const sendDelete = (id, keepalive = false) =>
+  keepalive
+    ? fetch(`${api.defaults.baseURL}/transactions/${id}`, {
+        method: "DELETE",
+        keepalive: true,
+        headers: { Authorization: `Bearer ${currentToken()}` },
+      })
+    : api.delete(`/transactions/${id}`);
+
+export const deleteWithUndo = (tx, { delay = 5000, onError } = {}) => {
+  publish((getCached() ?? []).filter((t) => t.id !== tx.id));
+  const timer = setTimeout(() => {
+    pendingDeletes.delete(tx.id);
+    sendDelete(tx.id).catch(() => {
+      publish([tx, ...(getCached() ?? [])]); // put it back
+      onError?.();
+    });
+  }, delay);
+  pendingDeletes.set(tx.id, { timer, tx });
+
+  // Undo
+  return () => {
+    const p = pendingDeletes.get(tx.id);
+    if (!p) return false;
+    clearTimeout(p.timer);
+    pendingDeletes.delete(tx.id);
+    publish([tx, ...(getCached() ?? [])]);
+    return true;
+  };
+};
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    for (const [id, { timer }] of pendingDeletes) {
+      clearTimeout(timer);
+      sendDelete(id, true);
+    }
+    pendingDeletes.clear();
+  });
 }

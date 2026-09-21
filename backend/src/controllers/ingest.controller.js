@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import prisma from "../prisma.js";
 import { parseBankSms } from "../utils/smsParser.js";
+import { normalizePayee } from "../utils/payee.js";
+import { notifyImported } from "../services/notifications.js";
 
 const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
 const MAX_TEXT = 5000;
@@ -87,6 +89,11 @@ export const ingestMessage = async (req, res) => {
     ? `ref:${parsed.ref}`
     : `txt:${sha256(body.replace(/\s+/g, " ").trim())}`;
 
+  // The user's own rule for this payee beats the parser's guess
+  const rule = await prisma.payeeRule.findUnique({
+    where: { userId_payee: { userId: user.id, payee: normalizePayee(parsed.title) } },
+  });
+
   try {
     const tx = await prisma.transaction.create({
       data: {
@@ -94,13 +101,14 @@ export const ingestMessage = async (req, res) => {
         title: parsed.title,
         amount: parsed.amount,
         type: parsed.type,
-        category: parsed.category,
+        category: rule?.category ?? parsed.category,
         date: pickDate(date),
         source: SOURCES.includes(source) ? source : "sms",
         externalRef,
       },
     });
     res.status(201).json({ status: "added", transaction: tx });
+    notifyImported(user.id, tx).catch((err) => console.error("Notify error:", err));
   } catch (err) {
     if (err.code === "P2002") return res.json({ status: "duplicate" });
     console.error("Ingest error:", err);

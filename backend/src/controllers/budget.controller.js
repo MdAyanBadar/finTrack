@@ -17,7 +17,13 @@ export const getBudget = async (req, res) => {
 
 // CREATE or UPDATE budget
 export const updateBudget = async (req, res) => {
-  const { monthlyBudget, savingsGoal, salaryDay } = req.body;
+  const { salaryDay } = req.body;
+  const monthlyBudget = Number(req.body.monthlyBudget);
+  const savingsGoal = Number(req.body.savingsGoal);
+
+  if (![monthlyBudget, savingsGoal].every((n) => Number.isFinite(n) && n >= 0 && n <= 1e10)) {
+    return res.status(400).json({ message: "Budget and savings goal must be 0 or more" });
+  }
 
   // salaryDay is optional; when omitted the saved value is kept
   if (

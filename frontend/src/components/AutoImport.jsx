@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { Mail, KeyRound, Copy, Check, FlaskConical, Trash2, ExternalLink } from "lucide-react";
+import { Mail, KeyRound, Copy, Check, FlaskConical, ExternalLink } from "lucide-react";
 import api from "../api/api";
-
-const inputCls =
-  "w-full bg-white/[0.05] border border-white/[0.1] focus:border-indigo-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all";
+import { Card, Button, Field, Input, inputClass } from "./ui";
 
 // Google Apps Script that runs in the user's Gmail and forwards new bank alerts
 const buildScript = ({ url, key, senders }) => `// FinTrack: import bank alert emails from Gmail
@@ -108,107 +106,87 @@ function AutoImport() {
   };
 
   return (
-    <div className="bg-slate-900/50 border border-white/[0.08] rounded-[2rem] p-6 sm:p-8 backdrop-blur-3xl">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/20">
-          <Mail className="w-5 h-5 text-indigo-400" />
+    <Card className="p-5">
+      <div className="flex items-center gap-3.5">
+        <div className="w-11 h-11 rounded-full bg-surface-2 flex items-center justify-center shrink-0">
+          <Mail className="w-5 h-5 text-ink-2" />
         </div>
-        <div>
-          <h3 className="text-xl font-bold text-white">Auto-import from bank emails</h3>
-          <p className="text-xs text-slate-500">{hasKey ? "On" : "Off"} · Works with Gmail</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-[15px] font-semibold">Import from bank emails</p>
+          <p className="text-[13px] text-ink-3">Gmail · checks every 5 minutes</p>
         </div>
+        <span className={`h-7 px-2.5 rounded-full text-xs font-semibold flex items-center ${hasKey ? "bg-pos/10 text-pos" : "bg-surface-2 text-ink-3"}`}>
+          {hasKey ? "On" : "Off"}
+        </span>
       </div>
-      <p className="text-sm text-slate-400 mb-6">
-        A small script in your own Gmail checks for new bank alerts every 5 minutes and adds them here.
-        Each payment is imported once, even if the email arrives twice.
+      <p className="text-sm text-ink-2 mt-4">
+        A small script in your own Gmail sends new bank alerts here. Each payment is imported once, even if the email arrives twice.
       </p>
 
       {isLocal && (
-        <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 mb-4">
+        <p className="text-[13px] text-warn bg-warn/10 rounded-2xl px-4 py-3 mt-4">
           You&apos;re on a local copy. Google can&apos;t reach localhost, so set this up from the live site.
         </p>
       )}
 
-      {/* Step 1: sender + key */}
-      <label className="block text-sm text-slate-400 mb-2">Bank email sender (comma-separated for more than one bank)</label>
-      <input value={senders} onChange={(e) => setSenders(e.target.value)} placeholder="slice.bank.in, alerts@hdfcbank.net" className={`${inputCls} mb-4`} />
-
-      <div className="flex flex-wrap gap-3 mb-6">
-        <button onClick={createKey}
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all">
-          <KeyRound className="w-4 h-4" /> {hasKey ? "Create new key & script" : "Create key & script"}
-        </button>
-        {hasKey && (
-          <button onClick={revokeKey}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all">
-            <Trash2 className="w-4 h-4" /> Turn off
-          </button>
-        )}
+      <div className="mt-5 space-y-4">
+        <Field label="Bank email sender" hint="Comma-separated for more than one bank, e.g. slice.bank.in, alerts@hdfcbank.net">
+          <Input value={senders} onChange={(e) => setSenders(e.target.value)} />
+        </Field>
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={createKey}><KeyRound className="w-4 h-4" /> {hasKey ? "New key & script" : "Create key & script"}</Button>
+          {hasKey && <Button variant="danger" onClick={revokeKey}>Turn off</Button>}
+        </div>
+        {error && <p className="text-sm text-neg">{error}</p>}
       </div>
-      {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-      {/* Step 2: script + instructions (only right after creating a key) */}
       {key && (
-        <div className="mb-8">
+        <div className="mt-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-white font-semibold">Your Gmail script</p>
-            <button onClick={copy} className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-300 hover:text-indigo-200">
+            <p className="text-sm font-semibold">Your Gmail script</p>
+            <button onClick={copy} className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent-ink">
               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} {copied ? "Copied" : "Copy"}
             </button>
           </div>
-          <p className="text-xs text-amber-300 mb-2">Copy it now. The key is shown only once. It&apos;s already filled in below.</p>
-          <pre className="max-h-64 overflow-auto text-[11px] leading-relaxed text-slate-300 bg-black/40 border border-white/[0.06] rounded-xl p-4 whitespace-pre">{script}</pre>
-
-          <ol className="mt-4 space-y-2 text-sm text-slate-300 list-decimal list-inside">
+          <p className="text-[13px] text-warn mb-2">Copy it now. The key is shown only once.</p>
+          <pre className="max-h-56 overflow-auto text-[11px] leading-relaxed text-ink-2 bg-bg border border-line rounded-2xl p-4 whitespace-pre">{script}</pre>
+          <ol className="mt-4 space-y-2 text-sm text-ink-2 list-decimal list-inside">
             <li>
               Open{" "}
-              <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer" className="text-indigo-300 hover:underline inline-flex items-center gap-1">
+              <a href="https://script.google.com/home/projects/create" target="_blank" rel="noreferrer" className="text-accent-ink inline-flex items-center gap-1">
                 script.google.com <ExternalLink className="w-3 h-3" />
               </a>{" "}
-              signed in to the Gmail account that gets your bank alerts. A computer is easiest.
+              in the Gmail account that gets your bank alerts (a computer is easiest).
             </li>
-            <li>Delete the sample code, paste the script, and click <b>Save</b>.</li>
-            <li>Pick <b>setup</b> in the function dropdown and click <b>Run</b>.</li>
-            <li>
-              Allow access. Google warns that the app isn&apos;t verified because it&apos;s your own script:
-              click <b>Advanced → Go to project</b>, then <b>Allow</b>.
-            </li>
-            <li>Done. Your last 2 days of alerts are imported now, and new ones every 5 minutes.</li>
+            <li>Delete the sample code, paste the script and click <b className="text-ink">Save</b>.</li>
+            <li>Pick <b className="text-ink">setup</b> in the function menu and click <b className="text-ink">Run</b>.</li>
+            <li>Allow access: <b className="text-ink">Advanced → Go to project → Allow</b> (it&apos;s your own script, so Google can&apos;t verify it).</li>
+            <li>Done. The last 2 days are imported now, new alerts every 5 minutes.</li>
           </ol>
         </div>
       )}
 
-      {/* Test a message */}
-      <div className="border-t border-white/[0.06] pt-6">
-        <p className="text-sm text-white font-semibold mb-1 flex items-center gap-2">
-          <FlaskConical className="w-4 h-4 text-indigo-400" /> Test a message
-        </p>
-        <p className="text-xs text-slate-500 mb-3">Paste a bank email or SMS to see how it would be imported. Nothing is saved.</p>
-        <textarea value={sample} onChange={(e) => setSample(e.target.value)} rows={4}
+      <div className="mt-6 pt-5 border-t border-line/70">
+        <p className="text-sm font-semibold flex items-center gap-2"><FlaskConical className="w-4 h-4 text-ink-3" /> Test a message</p>
+        <p className="text-[13px] text-ink-3 mt-0.5 mb-3">Paste a bank email or SMS to see how it would be imported. Nothing is saved.</p>
+        <textarea value={sample} onChange={(e) => setSample(e.target.value)} rows={3}
           placeholder="₹1 debited from your slice bank account xx8625 via UPI. To KARTHIK G RRN 626429329770"
-          className={`${inputCls} resize-y mb-3`} />
-        <button onClick={test} disabled={!sample.trim()}
-          className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-white/[0.06] border border-white/[0.1] hover:bg-white/[0.1] disabled:opacity-40">
-          Test
-        </button>
+          className={`${inputClass} h-auto py-3 resize-y`} />
+        <Button variant="secondary" size="sm" className="mt-3" onClick={test} disabled={!sample.trim()}>Test</Button>
         {preview && (
-          <div className={`mt-3 text-sm rounded-xl px-4 py-3 border ${
-            preview.status === "ok" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-200" : "bg-amber-500/10 border-amber-500/20 text-amber-200"
-          }`}>
+          <p className={`mt-3 text-sm rounded-2xl px-4 py-3 ${preview.status === "ok" ? "bg-pos/10 text-ink" : "bg-warn/10 text-warn"}`}>
             {preview.status === "ok" ? (
               <>
-                Would add <b>{preview.parsed.title}</b> ·{" "}
-                <b>{preview.parsed.amount < 0 ? "-" : "+"}₹{Math.abs(preview.parsed.amount).toLocaleString("en-IN")}</b> ·{" "}
-                {preview.parsed.category}
-                {preview.parsed.ref && <span className="text-emerald-300/70"> · ref {preview.parsed.ref}</span>}
+                Would add <b>{preview.parsed.title}</b> · <b className="tabular">{preview.parsed.amount < 0 ? "−" : "+"}₹{Math.abs(preview.parsed.amount).toLocaleString("en-IN")}</b> · {preview.parsed.category}
+                {preview.parsed.ref && <span className="text-ink-3"> · ref {preview.parsed.ref}</span>}
               </>
             ) : (
               <>Would skip: {preview.reason}</>
             )}
-          </div>
+          </p>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 

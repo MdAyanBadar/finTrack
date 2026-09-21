@@ -1,214 +1,89 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import api from "../api/api";
+import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { Info, Smartphone, LogOut, ChevronRight } from "lucide-react";
+import { useResource } from "../api/resourceStore";
+import { Page, PageHeader, Card, Section, Sheet, Button, Skeleton } from "./ui";
 import AutoImport from "./AutoImport";
-import { motion, AnimatePresence } from "framer-motion";
-import { 
-  LogOut, Mail, Calendar, Shield, Settings, User, 
-  ChevronRight, Check, Bell, Fingerprint, CreditCard, 
-  ArrowUpRight, Zap 
-} from "lucide-react";
+import NotificationSettings from "./NotificationSettings";
 
 function Profile() {
-  const [user, setUser] = useState(null);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  // New State for UI Toggles
-  const [settings, setSettings] = useState({
-    notifications: true,
-    twoFactor: false,
-    weeklyReport: true
-  });
-  
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const res = await api.get("/users/me");
-        setUser(res.data);
-      } catch {
-        navigate("/login");
-      }
-    };
-    fetchProfile();
-  }, [navigate]);
+  const { data: user, loading } = useResource("/users/me", null);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [installHelp, setInstallHelp] = useState(false);
 
   const logout = () => {
     localStorage.removeItem("token");
     navigate("/login");
   };
 
-  const toggleSetting = (key) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  if (!user) return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
-
   return (
-    <div className="max-w-4xl mx-auto px-6 py-12 pb-24">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        className="space-y-8"
-      >
-        {/* 1. MAIN IDENTITY CARD */}
-        <div className="bg-slate-900/50 border border-white/[0.08] rounded-[2.5rem] overflow-hidden backdrop-blur-3xl shadow-2xl">
-          <div className="h-32 bg-gradient-to-r from-indigo-600 to-purple-700 relative">
-             <div className="absolute -bottom-12 left-8">
-                <div className="w-24 h-24 rounded-3xl bg-slate-900 p-1">
-                  <div className="w-full h-full rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-3xl font-black text-white shadow-xl">
-                    {user.name.charAt(0).toUpperCase()}
-                  </div>
-                </div>
-             </div>
-          </div>
-          
-          <div className="pt-16 pb-8 px-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-3xl font-black text-white tracking-tight">{user.name}</h2>
-                <p className="text-slate-400 flex items-center gap-2 mt-1">
-                  <Mail className="w-4 h-4" /> {user.email}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <span className="px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-black uppercase tracking-widest">
-                  Premium Member
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+    <Page>
+      <PageHeader title="Profile" />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          
-          {/* 2. SECURITY & PREFERENCES (New Section) */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Preferences</h3>
-            <div className="bg-slate-900/50 border border-white/[0.08] rounded-[2rem] p-4 space-y-2">
-              <PreferenceToggle 
-                icon={<Bell className="w-4 h-4" />} 
-                title="Smart Notifications" 
-                enabled={settings.notifications} 
-                onClick={() => toggleSetting('notifications')}
-              />
-              <PreferenceToggle 
-                icon={<Fingerprint className="w-4 h-4" />} 
-                title="Biometric Security" 
-                enabled={settings.twoFactor} 
-                onClick={() => toggleSetting('twoFactor')}
-              />
-              <PreferenceToggle 
-                icon={<Zap className="w-4 h-4" />} 
-                title="Weekly AI Insights" 
-                enabled={settings.weeklyReport} 
-                onClick={() => toggleSetting('weeklyReport')}
-              />
-            </div>
+      {loading || !user ? (
+        <Skeleton className="h-24" />
+      ) : (
+        <Card className="p-5 flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-accent flex items-center justify-center text-xl font-bold text-white shrink-0">
+            {user.name.charAt(0).toUpperCase()}
           </div>
+          <div className="min-w-0">
+            <p className="text-lg font-semibold truncate">{user.name}</p>
+            <p className="text-sm text-ink-3 truncate">{user.email}</p>
+            <p className="text-[13px] text-ink-3 mt-0.5">
+              Member since {new Date(user.createdAt).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+            </p>
+          </div>
+        </Card>
+      )}
 
-          {/* 3. QUICK STATS */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Overview</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-900/50 border border-white/[0.08] rounded-[2rem] p-6 text-center">
-                <p className="text-[10px] font-black text-slate-500 uppercase mb-1">Status</p>
-                <p className="text-emerald-400 font-black">Active</p>
-              </div>
-              <div className="bg-slate-900/50 border border-white/[0.08] rounded-[2rem] p-6 text-center">
-                <p className="text-[10px] font-black text-slate-500 uppercase mb-1">Level</p>
-                <p className="text-indigo-400 font-black">Lvl 12</p>
-              </div>
-            </div>
-          </div>
-        </div>
+      <Section title="Notifications">
+        <NotificationSettings />
+      </Section>
 
-        {/* 4. LINKED METHODS (New Section) */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center ml-2">
-            <h3 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em]">Linked Accounts</h3>
-            <button className="text-indigo-400 text-xs font-bold hover:underline">Add New</button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-gradient-to-br from-indigo-500/10 to-transparent border border-indigo-500/20 rounded-3xl p-6 flex justify-between items-center group cursor-pointer hover:border-indigo-500/40 transition-all">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 flex items-center justify-center text-indigo-400">
-                  <CreditCard className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="font-bold text-white">HDFC Bank</p>
-                  <p className="text-xs text-slate-500 font-medium">•••• 4421</p>
-                </div>
-              </div>
-              <ArrowUpRight className="w-5 h-5 text-slate-600 group-hover:text-indigo-400 transition-colors" />
-            </div>
-            {/* Placeholder for empty state or second account */}
-            <div className="border border-dashed border-white/10 rounded-3xl p-6 flex items-center justify-center text-slate-600 text-sm font-bold">
-              + Link another source
-            </div>
-          </div>
-        </div>
-
-        {/* AUTO-IMPORT */}
+      <Section title="Automation">
         <AutoImport />
+      </Section>
 
-        {/* 5. DANGER ZONE */}
-        <div className="pt-8">
-           <button
-            onClick={() => setShowLogoutModal(true)}
-            className="w-full py-5 rounded-[2rem] bg-rose-500/5 border border-rose-500/20 text-rose-500 font-black uppercase tracking-widest hover:bg-rose-500/10 transition-all flex items-center justify-center gap-3"
-          >
-            <LogOut className="w-5 h-5" />
-            End Current Session
+      <Section title="App">
+        <Card className="divide-y divide-line/60 overflow-hidden">
+          <button onClick={() => setInstallHelp(true)} className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left hover:bg-surface-2/60 transition">
+            <Smartphone className="w-5 h-5 text-ink-2" />
+            <span className="flex-1 text-[15px]">Add to Home Screen</span>
+            <ChevronRight className="w-4 h-4 text-ink-3" />
           </button>
+          <Link to="/about" className="flex items-center gap-3.5 px-4 py-3.5 hover:bg-surface-2/60 transition">
+            <Info className="w-5 h-5 text-ink-2" />
+            <span className="flex-1 text-[15px]">About FinTrack</span>
+            <ChevronRight className="w-4 h-4 text-ink-3" />
+          </Link>
+          <button onClick={() => setConfirmLogout(true)} className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left text-neg hover:bg-surface-2/60 transition">
+            <LogOut className="w-5 h-5" />
+            <span className="flex-1 text-[15px]">Sign out</span>
+          </button>
+        </Card>
+      </Section>
+
+      <Sheet open={installHelp} onClose={() => setInstallHelp(false)} title="Add to Home Screen">
+        <ol className="space-y-3 text-[15px] text-ink-2 list-decimal list-inside">
+          <li>Open FinTrack in <b className="text-ink">Safari</b> on your iPhone.</li>
+          <li>Tap <b className="text-ink">Share</b> (the square with an arrow).</li>
+          <li>Tap <b className="text-ink">Add to Home Screen</b>, then <b className="text-ink">Add</b>.</li>
+          <li>Open it from your home screen and sign in once.</li>
+        </ol>
+        <p className="text-[13px] text-ink-3 mt-4">On Android Chrome: menu ⋮ → Install app.</p>
+      </Sheet>
+
+      <Sheet open={confirmLogout} onClose={() => setConfirmLogout(false)} title="Sign out?">
+        <p className="text-[15px] text-ink-2 mb-5">You&apos;ll need your email and password to sign back in.</p>
+        <div className="flex gap-3">
+          <Button variant="secondary" className="flex-1" onClick={() => setConfirmLogout(false)}>Cancel</Button>
+          <Button variant="danger" className="flex-1" onClick={logout}>Sign out</Button>
         </div>
-
-      </motion.div>
-
-      {/* Logout Modal remains same as your original code */}
-      <AnimatePresence>
-        {showLogoutModal && (
-          <LogoutModal onConfirm={logout} onCancel={() => setShowLogoutModal(false)} />
-        )}
-      </AnimatePresence>
-    </div>
+      </Sheet>
+    </Page>
   );
-}
-
-// Helper Component for Preferences
-function PreferenceToggle({ icon, title, enabled, onClick }) {
-  return (
-    <div className="flex items-center justify-between p-4 hover:bg-white/[0.02] rounded-2xl transition-all cursor-pointer" onClick={onClick}>
-      <div className="flex items-center gap-4">
-        <div className="text-slate-400">{icon}</div>
-        <span className="text-sm font-bold text-slate-200">{title}</span>
-      </div>
-      <div className={`w-10 h-5 rounded-full transition-all relative ${enabled ? 'bg-indigo-600' : 'bg-slate-700'}`}>
-        <motion.div 
-          animate={{ x: enabled ? 20 : 2 }}
-          className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-lg"
-        />
-      </div>
-    </div>
-  );
-}
-
-function LogoutModal({ onConfirm, onCancel }) {
-    return (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[100] p-6">
-            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-slate-900 border border-white/10 p-8 rounded-[3rem] max-w-sm w-full text-center">
-                <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500">
-                    <LogOut className="w-10 h-10" />
-                </div>
-                <h3 className="text-2xl font-black text-white mb-2">Logout?</h3>
-                <p className="text-slate-500 font-medium mb-8">You will need to re-authenticate to access your dashboard.</p>
-                <div className="flex gap-4">
-                    <button onClick={onCancel} className="flex-1 py-4 rounded-2xl bg-white/5 font-bold">Cancel</button>
-                    <button onClick={onConfirm} className="flex-1 py-4 rounded-2xl bg-rose-500 text-white font-black shadow-lg shadow-rose-500/20">Exit</button>
-                </div>
-            </motion.div>
-        </motion.div>
-    );
 }
 
 export default Profile;

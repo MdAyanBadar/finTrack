@@ -10,3 +10,19 @@ export const knownCategories = (extra = []) => {
   }
   return [...new Set([...DEFAULT_CATEGORIES, ...custom, ...extra])];
 };
+
+// Chart colours, validated for contrast and colour-blind separation on the
+// dark surface. Assigned by category (not rank) so a category keeps its colour.
+export const SERIES_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#e66767"];
+export const OTHER_COLOR = "#52525b";
+
+// Stable colour per category: ordered by all-time spend, so the biggest
+// categories get the first (most distinct) colours and keep them everywhere
+export const categoryColorMap = (transactions) => {
+  const totals = {};
+  for (const t of transactions) {
+    if (t.amount < 0) totals[t.category || "General"] = (totals[t.category || "General"] || 0) - t.amount;
+  }
+  const ranked = Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  return Object.fromEntries(ranked.map((c, i) => [c, SERIES_COLORS[i] ?? OTHER_COLOR]));
+};

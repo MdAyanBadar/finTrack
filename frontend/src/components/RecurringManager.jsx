@@ -1,201 +1,211 @@
-import { useEffect, useRef, useState } from "react";
-import { Trash2, Repeat, Pencil } from "lucide-react";
+import { useState } from "react";
+import { Repeat, Plus } from "lucide-react";
 import api from "../api/api";
-import { loadTransactions } from "../api/transactionStore";
+import { useResource } from "../api/resourceStore";
+import { loadTransactions, useTransactions } from "../api/transactionStore";
 import { knownCategories } from "../utils/categories";
-
-const inputCls =
-  "w-full bg-white/[0.05] border border-white/[0.1] focus:border-orange-500/50 rounded-xl px-4 py-3 text-white outline-none transition-all focus:bg-white/[0.08] [color-scheme:dark]";
+import { getPayCycle, missedThisCycle, toDateKey } from "../utils/payCycle";
+import { formatINR, shortDate } from "../utils/format";
+import { toast } from "../utils/toast";
+import { Card, Section, Sheet, Segmented, Field, Input, Select, Button, EmptyState } from "./ui";
 
 const ordinal = (n) => {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
-
 const formatMonth = (ym) =>
   new Date(`${ym}-01T00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 
-// Rent, EMIs, subscriptions... added automatically every month on the chosen day
-const EMPTY_FORM = {
-  title: "", amount: "", type: "expense", category: "Bills", dayOfMonth: "", repeat: "always", endMonth: "",
-};
+const EMPTY = { title: "", amount: "", type: "expense", category: "Bills", dayOfMonth: "", repeat: "always", endMonth: "" };
 
-function RecurringManager({ onMessage }) {
-  const [items, setItems] = useState([]);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [editingId, setEditingId] = useState(null);
+// Rent, EMIs, subscriptions, salary... added automatically every month on their day
+function RecurringManager({ salaryDay = 1 }) {
+  const { data: items, setData: setItems } = useResource("/recurring", []);
+  const { transactions } = useTransactions();
+
+  // Already paid? Same amount recorded within a day of the due date
+  // (added by hand or imported from a bank email) means nothing is missing.
+  const alreadyRecorded = (item, date) =>
+    transactions.some((t) => t.amount === item.amount && Math.abs(new Date(t.date) - date) <= 36 * 3600e3);
+  const missingFor = (item) => {
+    const d = missedThisCycle(item.dayOfMonth, salaryDay, item.startDate);
+    return d && !alreadyRecorded(item, d) ? d : null;
+  };
+  const [form, setForm] = useState(null); // null = closed; { id?, ...fields }
+  const [countThisCycle, setCountThisCycle] = useState(true);
   const [saving, setSaving] = useState(false);
-  const formRef = useRef(null);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    api.get("/recurring").then((res) => setItems(res.data || [])).catch(() => setItems([]));
-  }, []);
+  const cycleStartKey = toDateKey(getPayCycle(salaryDay).start);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const sorted = [...items].sort((a, b) => a.dayOfMonth - b.dayOfMonth);
 
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const day = Number(form?.dayOfMonth);
+  const validDay = Number.isInteger(day) && day >= 1 && day <= 31;
+  // New item whose day already passed this cycle: offer to count it
+  const newItemMissed = form && !form.id && validDay ? missedThisCycle(day, salaryDay) : null;
 
-  const startEdit = (item) => {
-    setEditingId(item.id);
+  const openNew = () => { setError(""); setCountThisCycle(true); setForm(EMPTY); };
+  const openEdit = (i) => {
+    setError("");
     setForm({
-      title: item.title,
-      amount: String(Math.abs(item.amount)),
-      type: item.type,
-      category: item.category,
-      dayOfMonth: String(item.dayOfMonth),
-      repeat: item.endMonth ? "until" : "always",
-      endMonth: item.endMonth || "",
+      id: i.id, title: i.title, amount: String(Math.abs(i.amount)), type: i.type, category: i.category,
+      dayOfMonth: String(i.dayOfMonth), repeat: i.endMonth ? "until" : "always", endMonth: i.endMonth || "",
     });
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-  };
+  const payloadFrom = (f) => ({
+    title: f.title.trim(), amount: Number(f.amount), type: f.type, category: f.category.trim() || "General",
+    dayOfMonth: Number(f.dayOfMonth), endMonth: f.repeat === "until" ? f.endMonth : null,
+  });
 
   const save = async () => {
-    const day = Number(form.dayOfMonth);
-    if (!form.title.trim() || !(Number(form.amount) > 0) || !Number.isInteger(day) || day < 1 || day > 31) {
-      onMessage({ text: "Enter a name, an amount and a day between 1 and 31", type: "error" });
+    if (!form.title.trim() || !(Number(form.amount) > 0) || !validDay) {
+      setError("Enter a name, an amount and a day between 1 and 31");
       return;
     }
     if (form.repeat === "until" && !form.endMonth) {
-      onMessage({ text: "Choose the last month it should run", type: "error" });
+      setError("Choose the last month it should run");
       return;
     }
-
     try {
       setSaving(true);
-      const payload = {
-        title: form.title.trim(),
-        amount: Number(form.amount),
-        type: form.type,
-        category: form.category.trim() || "General",
-        dayOfMonth: day,
-        endMonth: form.repeat === "until" ? form.endMonth : null,
-      };
-      const res = editingId
-        ? await api.put(`/recurring/${editingId}`, payload)
-        : await api.post("/recurring", payload);
-
-      setItems((prev) =>
-        [...prev.filter((i) => i.id !== res.data.id), res.data].sort((a, b) => a.dayOfMonth - b.dayOfMonth)
-      );
-      onMessage({
-        text: editingId
-          ? `${res.data.title} updated. Past entries are unchanged.`
-          : `${res.data.title} will be added on the ${ordinal(day)} of each month`,
-        type: "success",
-      });
-      setEditingId(null);
-      setForm(EMPTY_FORM);
-      // Saving may have posted an entry that's already due
+      const payload = { ...payloadFrom(form), ...(newItemMissed && countThisCycle && { startFrom: cycleStartKey }) };
+      const res = form.id ? await api.put(`/recurring/${form.id}`, payload) : await api.post("/recurring", payload);
+      setItems((prev) => [...prev.filter((i) => i.id !== res.data.id), res.data]);
+      toast(form.id ? `${res.data.title} updated` : `${res.data.title} added on the ${ordinal(res.data.dayOfMonth)} of each month`);
+      setForm(null);
       loadTransactions().catch(() => {});
     } catch (err) {
-      onMessage({ text: err.response?.data?.message || "Failed to save recurring item", type: "error" });
+      setError(err.response?.data?.message || "Couldn't save");
     } finally {
       setSaving(false);
     }
   };
 
-  const remove = async (id) => {
+  const remove = async () => {
+    if (!window.confirm(`Stop "${form.title}"? Transactions already added are kept.`)) return;
     try {
-      await api.delete(`/recurring/${id}`);
-      setItems((prev) => prev.filter((i) => i.id !== id));
-      if (editingId === id) cancelEdit();
-      onMessage({ text: "Stopped. Transactions already added are kept.", type: "success" });
+      setSaving(true);
+      await api.delete(`/recurring/${form.id}`);
+      setItems((prev) => prev.filter((i) => i.id !== form.id));
+      toast(`${form.title} stopped`);
+      setForm(null);
     } catch {
-      onMessage({ text: "Failed to remove recurring item", type: "error" });
+      setError("Couldn't remove it");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Add this cycle's missed payment for an item created after its day had passed
+  const catchUp = async (item, date) => {
+    try {
+      setBusyId(item.id);
+      const res = await api.put(`/recurring/${item.id}`, {
+        ...payloadFrom({ ...item, amount: Math.abs(item.amount), dayOfMonth: item.dayOfMonth, repeat: item.endMonth ? "until" : "always", endMonth: item.endMonth || "" }),
+        startFrom: cycleStartKey,
+      });
+      setItems((prev) => prev.map((i) => (i.id === item.id ? res.data : i)));
+      await loadTransactions().catch(() => {});
+      toast(`${item.title} for ${shortDate(date)} added to this pay cycle`);
+    } catch (err) {
+      toast(err.response?.data?.message || "Couldn't add the missed payment", "error");
+    } finally {
+      setBusyId(null);
     }
   };
 
   const thisMonth = new Date().toISOString().slice(0, 7);
 
   return (
-    <div className="relative mt-8 bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-8">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-2xl font-bold text-white">Recurring</h3>
-        <div className="w-12 h-12 bg-orange-500/20 rounded-xl flex items-center justify-center border border-orange-500/20">
-          <Repeat className="w-6 h-6 text-orange-400" />
-        </div>
-      </div>
-      <p className="text-sm text-gray-400 mb-6">
-        Rent, EMIs, subscriptions or income that repeat monthly. They&apos;re added to your transactions automatically on the day.
-      </p>
-
-      {items.length > 0 && (
-        <ul className="space-y-2 mb-6">
-          {items.map((i) => (
-            <li key={i.id} className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
-              editingId === i.id ? "bg-orange-500/10 border-orange-500/30" : "bg-white/[0.03] border-white/[0.05]"
-            }`}>
-              <div className="min-w-0">
-                <p className="text-white font-semibold truncate">{i.title}</p>
-                <p className="text-xs text-gray-500">
-                  {ordinal(i.dayOfMonth)} of every month · {i.category} ·{" "}
-                  {i.endMonth ? `until ${formatMonth(i.endMonth)}` : "always"}
-                </p>
+    <Section title="Recurring" action="Add" onAction={openNew}>
+      <Card className="divide-y divide-line/60 overflow-hidden">
+        {sorted.length === 0 ? (
+          <EmptyState icon={Repeat} title="No recurring items"
+            text="Add rent, EMIs, subscriptions or salary. They're added automatically on their day."
+            action={<Button size="sm" onClick={openNew}><Plus className="w-4 h-4" /> Add recurring</Button>} />
+        ) : (
+          sorted.map((i) => {
+            const missed = missingFor(i);
+            return (
+              <div key={i.id} className="flex items-center gap-3.5 px-4 py-3">
+                <button onClick={() => openEdit(i)} className="flex-1 min-w-0 flex items-center gap-3.5 text-left">
+                  <div className="w-11 h-11 shrink-0 rounded-full bg-surface-2 flex flex-col items-center justify-center">
+                    <span className="text-[15px] font-bold leading-none tabular">{i.dayOfMonth}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-medium truncate">{i.title}</p>
+                    <p className="text-[13px] text-ink-3 truncate">
+                      {i.category} · {i.endMonth ? `until ${formatMonth(i.endMonth)}` : "every month"}
+                    </p>
+                    {missed && <p className="text-[12px] text-warn mt-0.5">{shortDate(missed)} not counted yet</p>}
+                  </div>
+                </button>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <span className={`tabular text-[15px] font-semibold ${i.amount > 0 ? "text-pos" : ""}`}>
+                    {formatINR(i.amount, { sign: i.amount > 0 })}
+                  </span>
+                  {missed && (
+                    <button onClick={() => catchUp(i, missed)} disabled={busyId === i.id}
+                      className="h-7 px-2.5 rounded-full bg-warn/15 text-warn text-[12px] font-semibold disabled:opacity-50">
+                      {busyId === i.id ? "Adding…" : `Count ${shortDate(missed)}`}
+                    </button>
+                  )}
+                </div>
               </div>
-              <span className="flex items-center gap-3 shrink-0">
-                <span className={`font-bold ${i.amount < 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                  {i.amount < 0 ? "-" : "+"}₹{Math.abs(i.amount).toLocaleString("en-IN")}
+            );
+          })
+        )}
+      </Card>
+
+      <Sheet open={Boolean(form)} onClose={() => setForm(null)} title={form?.id ? "Edit recurring" : "New recurring"}>
+        {form && (
+          <div className="space-y-4">
+            <Segmented value={form.type} onChange={(v) => setForm({ ...form, type: v })}
+              options={[{ value: "expense", label: "Expense" }, { value: "income", label: "Income" }]} />
+            <Field label="Name"><Input placeholder="Rent, Netflix, Salary…" value={form.title} onChange={set("title")} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Amount (₹)"><Input type="number" inputMode="decimal" min="0" value={form.amount} onChange={set("amount")} /></Field>
+              <Field label="Day of month"><Input type="number" inputMode="numeric" min="1" max="31" placeholder="1–31" value={form.dayOfMonth} onChange={set("dayOfMonth")} /></Field>
+            </div>
+            <Field label="Category">
+              <Input list="recurring-categories" value={form.category} onChange={set("category")} />
+              <datalist id="recurring-categories">{knownCategories().map((c) => <option key={c} value={c} />)}</datalist>
+            </Field>
+            <Field label="Repeats">
+              <Select value={form.repeat} onChange={set("repeat")}>
+                <option value="always">Every month, no end</option>
+                <option value="until">Until a month…</option>
+              </Select>
+            </Field>
+            {form.repeat === "until" && (
+              <Field label="Last month it runs">
+                <Input type="month" min={thisMonth} value={form.endMonth} onChange={set("endMonth")} className="[color-scheme:dark]" />
+              </Field>
+            )}
+            {newItemMissed && (
+              <label className="flex items-start gap-3 p-3 rounded-2xl bg-surface-2 cursor-pointer">
+                <input type="checkbox" checked={countThisCycle} onChange={(e) => setCountThisCycle(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-[#8b5cf6]" />
+                <span className="text-sm">
+                  Also count this cycle&apos;s payment on <b>{shortDate(newItemMissed)}</b>
+                  <span className="block text-[13px] text-ink-3">Untick if you&apos;ve already added it as a transaction.</span>
                 </span>
-                <button onClick={() => startEdit(i)} aria-label={`Edit ${i.title}`}
-                  className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg hover:bg-indigo-500/20 transition-colors">
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button onClick={() => remove(i.id)} aria-label={`Stop ${i.title}`}
-                  className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {editingId && (
-        <p className="text-sm text-orange-300 mb-3">
-          Editing <span className="font-semibold">{items.find((i) => i.id === editingId)?.title}</span>. Changes apply from the next time it&apos;s added.
-        </p>
-      )}
-      <div ref={formRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <input placeholder="Name (e.g. Rent, Netflix)" value={form.title} onChange={set("title")} className={inputCls} />
-        <input type="number" min="1" placeholder="Amount (₹)" value={form.amount} onChange={set("amount")} className={inputCls} />
-        <select value={form.type} onChange={set("type")} className={inputCls}>
-          <option value="expense">Expense</option>
-          <option value="income">Income</option>
-        </select>
-        <input list="recurring-categories" placeholder="Category" value={form.category} onChange={set("category")} className={inputCls} />
-        <datalist id="recurring-categories">
-          {knownCategories().map((c) => <option key={c} value={c} />)}
-        </datalist>
-        <input type="number" min="1" max="31" placeholder="Day of month (1–31)" value={form.dayOfMonth} onChange={set("dayOfMonth")} className={inputCls} />
-        <select value={form.repeat} onChange={set("repeat")} className={inputCls}>
-          <option value="always">Repeats always</option>
-          <option value="until">Repeats until a month…</option>
-        </select>
-        {form.repeat === "until" && (
-          <label className="sm:col-span-2 lg:col-span-3 flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-gray-400">
-            Last month it runs:
-            <input type="month" min={thisMonth} value={form.endMonth} onChange={set("endMonth")} className={`${inputCls} sm:max-w-xs`} />
-          </label>
+              </label>
+            )}
+            {form.id && <p className="text-[13px] text-ink-3">Changes apply from the next time it&apos;s added.</p>}
+            {error && <p className="text-sm text-neg">{error}</p>}
+            <div className="flex gap-3 pt-1">
+              {form.id && <Button variant="danger" onClick={remove} disabled={saving}>Stop</Button>}
+              <Button className="flex-1" onClick={save} disabled={saving}>{saving ? "Saving…" : form.id ? "Save" : "Add"}</Button>
+            </div>
+          </div>
         )}
-      </div>
-
-      <div className="flex gap-3 mt-4">
-        <button onClick={save} disabled={saving}
-          className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-60 text-black font-semibold py-3 rounded-xl transition-all">
-          {saving ? "Saving…" : editingId ? "Save changes" : "Add recurring"}
-        </button>
-        {editingId && (
-          <button onClick={cancelEdit}
-            className="px-6 py-3 bg-white/[0.05] border border-white/[0.1] hover:bg-white/[0.1] text-white font-semibold rounded-xl transition-all">
-            Cancel
-          </button>
-        )}
-      </div>
-    </div>
+      </Sheet>
+    </Section>
   );
 }
 

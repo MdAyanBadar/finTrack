@@ -1,151 +1,48 @@
-import { useState } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 
-// Components
+import AppShell from "./components/AppShell";
+import QuickAdd from "./components/QuickAdd";
+import Toaster from "./components/Toaster";
+import ProtectedRoute from "./components/ProtectedRoute";
 import Home from "./components/Home";
 import Transactions from "./components/Transactions";
+import InsightsPage from "./components/InsightsPage";
 import BudgetGoals from "./components/BudgetGoals";
-import Navbar from "./components/Navbar";
+import Profile from "./components/Profile";
+import About from "./components/About";
 import Login from "./components/Login";
 import Register from "./components/Register";
-import ProtectedRoute from "./components/ProtectedRoute";
-import Profile from "./components/Profile";
-import Footer from "./components/Footer";
-import QuickAdd from "./components/QuickAdd";
 
-/* =========================
-   ANIMATED ROUTES
-========================= */
-function AnimatedRoutes({
-  budget,
-  goal,
-  transactions,
-  setTransactions,
-  setBudget,
-  setGoal,
-}) {
+// Opacity-only transition: transforms on page wrappers break fixed popups on iOS
+const Fade = ({ children }) => (
+  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+    {children}
+  </motion.div>
+);
+
+const protectedPage = (el) => <ProtectedRoute><Fade>{el}</Fade></ProtectedRoute>;
+
+function App() {
   const location = useLocation();
 
-  const pageVariants = {
-    initial: { opacity: 0, y: 20 },
-    in: { opacity: 1, y: 0 },
-    out: { opacity: 0, y: -20 },
-  };
-
-  const pageTransition = {
-    type: "tween",
-    ease: "anticipate",
-    duration: 0.2,
-  };
-
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <motion.div
-                initial="initial"
-                animate="in"
-                exit="out"
-                variants={pageVariants}
-                transition={pageTransition}
-              >
-                <Home
-                  budget={budget}
-                  goal={goal}
-                  transactions={transactions}
-                />
-              </motion.div>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/transactions"
-          element={
-            <ProtectedRoute>
-              <motion.div
-                initial="initial"
-                animate="in"
-                exit="out"
-                variants={pageVariants}
-                transition={pageTransition}
-              >
-                <Transactions
-                  transactions={transactions}
-                  setTransactions={setTransactions}
-                />
-              </motion.div>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/budget-goals"
-          element={
-            <ProtectedRoute>
-              <motion.div
-                initial="initial"
-                animate="in"
-                exit="out"
-                variants={pageVariants}
-                transition={pageTransition}
-              >
-                <BudgetGoals
-                  budget={budget}
-                  setBudget={setBudget}
-                  goal={goal}
-                  setGoal={setGoal}
-                />
-              </motion.div>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-      </Routes>
-    </AnimatePresence>
-  );
-}
-
-/* =========================
-   APP ROOT
-========================= */
-function App() {
-  const [transactions, setTransactions] = useState([]);
-  const [budget, setBudget] = useState(0);
-  const [goal, setGoal] = useState(0);
-
-  return (
-    <div className="min-h-screen bg-[#0B0F19] text-gray-200">
-      <Navbar />
-
-      <main className="">
-        <AnimatedRoutes
-          budget={budget}
-          goal={goal}
-          transactions={transactions}
-          setTransactions={setTransactions}
-          setBudget={setBudget}
-          setGoal={setGoal}
-        />
-      </main>
-      <Footer />
+    <AppShell>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={protectedPage(<Home />)} />
+          <Route path="/transactions" element={protectedPage(<Transactions />)} />
+          <Route path="/insights" element={protectedPage(<InsightsPage />)} />
+          <Route path="/budget-goals" element={protectedPage(<BudgetGoals />)} />
+          <Route path="/profile" element={protectedPage(<Profile />)} />
+          <Route path="/about" element={<Fade><About /></Fade>} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+        </Routes>
+      </AnimatePresence>
       <QuickAdd />
-    </div>
+      <Toaster />
+    </AppShell>
   );
 }
 

@@ -19,6 +19,9 @@ model User {
   budget          Budget?
   categoryBudgets CategoryBudget[]
   recurring       RecurringTransaction[]
+  payeeRules      PayeeRule[]
+  pushSubs        PushSubscription[]
+  notifications   NotificationLog[]
 }
 
 model Transaction {
@@ -81,4 +84,41 @@ model RecurringTransaction {
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+}
+
+// "Always put this payee in this category" - applied to auto-imported transactions
+model PayeeRule {
+  id       String @id @default(uuid())
+  userId   String
+  payee    String // normalised (lowercase, single spaces)
+  category String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, payee])
+}
+
+// A browser / home-screen app that can receive push notifications
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  timeZone  String   @default("Asia/Kolkata")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Notifications already sent, so each alert goes out once (key e.g. "over:2026-09-22")
+model NotificationLog {
+  id        String   @id @default(uuid())
+  userId    String
+  key       String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
 }

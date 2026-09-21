@@ -1,0 +1,25 @@
+# Sends FinTrack's daily push notifications (bills due tomorrow, salary-day
+# summary). The backend sleeps on Render's free plan, so a scheduler has to
+# call it. Needs two repository secrets:
+#   FINTRACK_API_URL  e.g. https://fintrack-1-v5co.onrender.com
+#   CRON_SECRET       same value as CRON_SECRET on the backend
+name: Daily notifications
+
+on:
+  schedule:
+    - cron: "30 3 * * *" # 03:30 UTC = 09:00 IST
+  workflow_dispatch: {}   # "Run workflow" button for testing
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call FinTrack
+        env:
+          API: ${{ secrets.FINTRACK_API_URL }}
+          SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # First request may take ~1 min while Render wakes the server
+          curl --fail --silent --show-error --max-time 120 --retry 2 --retry-delay 20 \
+            -X POST "$API/api/push/daily" -H "X-Cron-Secret: $SECRET"
