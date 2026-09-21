@@ -31,10 +31,14 @@ function NotificationSettings() {
       toast("Notifications on. We sent you a test.");
     } catch (err) {
       if (err.message === "blocked") setState("blocked");
+      const status = err.response?.status;
       toast(
-        err.response?.status === 503 ? "Notifications aren't set up on the server yet"
+        status === 503 ? "Notifications aren't set up on the server yet (missing VAPID keys)"
+          : status === 404 ? "The server is being updated. Try again in a few minutes."
+          : status === 401 ? "Please log in again, then turn notifications on"
           : err.message === "blocked" ? "Notifications are blocked in your settings"
-          : "Couldn't turn on notifications",
+          : err.message === "dismissed" ? "Notifications weren't allowed"
+          : `Couldn't turn on notifications${status ? ` (server error ${status})` : err.name ? ` (${err.name})` : ""}`,
         "error"
       );
     } finally {

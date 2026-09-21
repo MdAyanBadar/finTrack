@@ -234,7 +234,7 @@ export function Sheet({ open, onClose, title, children, footer }) {
                 <h2 className="text-lg font-bold text-ink">{title}</h2>
                 <IconButton label="Close" onClick={onClose}><X className="w-5 h-5" /></IconButton>
               </div>
-              <div className="px-6 pb-6 overflow-y-auto">{children}</div>
+              <div className="px-6 pb-6 overflow-y-auto overscroll-contain">{children}</div>
               {footer && <div className="px-6 pb-6">{footer}</div>}
             </motion.div>
           </div>
