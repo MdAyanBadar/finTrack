@@ -36,6 +36,8 @@
   html,
   body {
     overscroll-behavior: none;
+    /* Scroll yes, pinch-zoom / double-tap zoom no */
+    touch-action: pan-x pan-y;
   }
   /* Hide scrollbars everywhere; scrolling itself still works */
   * {
@@ -69,6 +71,12 @@
 /* Space for the bottom tab bar + iPhone home indicator */
 @utility pb-tabbar {
   padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+/* Charts: no focus box when a slice/bar is tapped */
+.recharts-wrapper,
+.recharts-wrapper * {
+  outline: none;
 }
 
 /* Horizontal chip rows scroll without a visible bar */

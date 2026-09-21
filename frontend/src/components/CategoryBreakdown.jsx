@@ -6,7 +6,14 @@ import { Card } from "./ui";
 
 // Donut + ranked list (the list doubles as the legend and the table view)
 function CategoryBreakdown({ spentByCategory, colorMap }) {
-  const [active, setActive] = useState(null);
+  // Selection comes from taps/clicks; hover only previews (desktop).
+  // Kept separate so a tap on a phone (which also fires hover) selects first time.
+  const [selected, setSelected] = useState(null);
+  const [hovered, setHovered] = useState(null);
+  const active = selected ?? hovered;
+  const toggle = (name) => setSelected((s) => (s === name ? null : name));
+  // Touch screens have no real hover (it would "stick" after a tap)
+  const canHover = typeof window !== "undefined" && window.matchMedia?.("(hover: hover)").matches;
   const rows = Object.entries(spentByCategory)
     .map(([name, value]) => ({ name, value, color: colorMap[name] ?? OTHER_COLOR }))
     .sort((a, b) => b.value - a.value);
@@ -25,8 +32,8 @@ function CategoryBreakdown({ spentByCategory, colorMap }) {
           <PieChart>
             <Pie data={rows} dataKey="value" nameKey="name" innerRadius="68%" outerRadius="100%"
               paddingAngle={rows.length > 1 ? 2 : 0} stroke="#111113" strokeWidth={2} isAnimationActive={false}
-              onMouseEnter={(d) => setActive(d.name)} onMouseLeave={() => setActive(null)}
-              onClick={(d) => setActive((a) => (a === d.name ? null : d.name))}>
+              onMouseEnter={(d) => canHover && setHovered(d.name)} onMouseLeave={() => setHovered(null)}
+              onClick={(d) => toggle(d.name)}>
               {rows.map((r) => (
                 <Cell key={r.name} fill={r.color} opacity={!active || active === r.name ? 1 : 0.35} />
               ))}
@@ -43,7 +50,7 @@ function CategoryBreakdown({ spentByCategory, colorMap }) {
       <ul className="mt-5 space-y-1">
         {rows.map((r) => (
           <li key={r.name}>
-            <button onClick={() => setActive((a) => (a === r.name ? null : r.name))}
+            <button onClick={() => toggle(r.name)}
               className={`w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left transition ${active === r.name ? "bg-surface-2" : "hover:bg-surface-2/60"}`}>
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: r.color }} />
               <span className="flex-1 text-sm text-ink truncate">{r.name}</span>

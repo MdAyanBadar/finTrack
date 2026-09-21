@@ -8,7 +8,7 @@
 const IGNORE = [
   /\botp\b/i,
   /one[- ]time password/i,
-  /\bwill be (debited|deducted)\b/i,
+  /\bwill be (debited|deducted|credited|added)\b/i,
   /\bhas requested\b/i,
   /\bcollect request\b/i,
   /\b(due|overdue)\b.*\b(on|by)\b/i,
@@ -17,7 +17,10 @@ const IGNORE = [
 ];
 
 const DEBIT = /\b(debited|debit|spent|paid|sent|withdrawn|purchase|payment of|txn of|transferred)\b/i;
-const CREDIT = /\b(credited|credit|received|deposited|refund(ed)?)\b/i;
+const CREDIT = /\b(credited|credit|received|deposited|refund(ed)?|added)\b/i;
+
+// Top-up of your own account, e.g. slice: "You added ₹5,160 to your slice bank account"
+const TOP_UP = /\b(?:you\s+)?added\b.*?\bto\s+your\s+([a-z]+)\s+(?:bank\s+)?(?:account|a\/c|wallet)/i;
 
 const AMOUNT = /(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
 // Some banks write "debited by 250.00" with no currency marker
@@ -91,6 +94,14 @@ export const parseBankSms = (raw) => {
   }
 
   const ref = text.match(REF)?.[1] ?? null;
+
+  // Money moved into your own account: a transfer, not a payment from someone
+  const topUp = type === "income" && !merchant ? text.match(TOP_UP) : null;
+  if (topUp) {
+    const bank = topUp[1].charAt(0).toUpperCase() + topUp[1].slice(1).toLowerCase();
+    return { amount, type, title: `Added to ${bank}`, category: "Transfer", ref };
+  }
+
   const title = merchant
     ? titleCase(merchant)
     : type === "expense" ? "UPI payment" : "Money received";

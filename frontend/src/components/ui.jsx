@@ -90,7 +90,7 @@ export function IconButton({ label, className = "", ...props }) {
 }
 
 export const inputClass =
-  "w-full h-12 bg-surface-2 border border-transparent focus:border-accent/60 rounded-2xl px-4 text-[15px] text-ink placeholder:text-ink-3 outline-none transition";
+  "w-full h-12 bg-surface-2 border border-transparent focus:border-accent/60 rounded-2xl px-4 text-base text-ink placeholder:text-ink-3 outline-none transition";
 
 export function Field({ label, hint, children }) {
   return (
