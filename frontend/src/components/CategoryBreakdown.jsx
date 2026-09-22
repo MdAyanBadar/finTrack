@@ -1,11 +1,14 @@
 import { useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { formatINR } from "../utils/format";
 import { OTHER_COLOR } from "../utils/categories";
 import { Card } from "./ui";
+import TransactionRow from "./TransactionRow";
 
-// Donut + ranked list (the list doubles as the legend and the table view)
-function CategoryBreakdown({ spentByCategory, colorMap }) {
+// Donut + ranked list (the list doubles as the legend and the table view).
+// Selecting a category swaps the list for that category's transactions.
+function CategoryBreakdown({ spentByCategory, colorMap, transactions = [] }) {
   // Selection comes from taps/clicks; hover only previews (desktop).
   // Kept separate so a tap on a phone (which also fires hover) selects first time.
   const [selected, setSelected] = useState(null);
@@ -19,6 +22,12 @@ function CategoryBreakdown({ spentByCategory, colorMap }) {
     .sort((a, b) => b.value - a.value);
   const total = rows.reduce((a, r) => a + r.value, 0);
   const focus = rows.find((r) => r.name === active);
+  const picked = rows.find((r) => r.name === selected);
+  const items = picked
+    ? transactions
+        .filter((t) => t.amount < 0 && (t.category || "General") === picked.name)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+    : [];
   const pct = (v) => { const p = (v / total) * 100; return p > 0 && p < 1 ? "<1%" : `${Math.round(p)}%`; };
 
   if (total === 0) {
@@ -47,6 +56,30 @@ function CategoryBreakdown({ spentByCategory, colorMap }) {
         </div>
       </div>
 
+      {picked ? (
+        <div className="mt-5">
+          <div className="flex items-center justify-between px-1 mb-2">
+            <button onClick={() => setSelected(null)}
+              className="flex items-center gap-1 text-sm font-medium text-accent-ink -ml-1">
+              <ChevronLeft className="w-4 h-4" /> All categories
+            </button>
+            <span className="text-[13px] text-ink-3">
+              {items.length} {items.length === 1 ? "transaction" : "transactions"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5 px-1 mb-1">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: picked.color }} />
+            <span className="text-[15px] font-semibold flex-1">{picked.name}</span>
+            <span className="tabular text-[15px] font-semibold">{formatINR(picked.value)}</span>
+          </div>
+          <div className="-mx-5 divide-y divide-line/60">
+            {items.map((t) => (
+              <TransactionRow key={t.id} t={t}
+                meta={new Date(t.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} />
+            ))}
+          </div>
+        </div>
+      ) : (
       <ul className="mt-5 space-y-1">
         {rows.map((r) => (
           <li key={r.name}>
@@ -60,6 +93,7 @@ function CategoryBreakdown({ spentByCategory, colorMap }) {
           </li>
         ))}
       </ul>
+      )}
     </Card>
   );
 }

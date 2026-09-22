@@ -24,7 +24,7 @@ function InsightsPage() {
       <PageHeader title="Insights" subtitle={`Pay cycle ${f.cycle.label}`} />
 
       <Section title="Where it went" className="mt-0">
-        <CategoryBreakdown spentByCategory={f.spentByCategory} colorMap={f.colorMap} />
+        <CategoryBreakdown spentByCategory={f.spentByCategory} colorMap={f.colorMap} transactions={f.cycleTx} />
       </Section>
 
       <Section title="Calendar">
