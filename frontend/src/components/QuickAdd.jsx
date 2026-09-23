@@ -34,6 +34,7 @@ function QuickAdd() {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Food");
   const [custom, setCustom] = useState("");
+  const [owedBy, setOwedBy] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [lastAdded, setLastAdded] = useState(null);
@@ -61,6 +62,7 @@ function QuickAdd() {
     setAmount("");
     setTitle("");
     setCustom("");
+    setOwedBy("");
     setType("expense");
   };
 
@@ -73,6 +75,7 @@ function QuickAdd() {
       type: item.type,
       category: item.category,
       date: new Date().toISOString(),
+      ...(item.owedBy && item.type === "expense" && { owedBy: item.owedBy }),
     };
     try {
       setSaving(true);
@@ -106,7 +109,7 @@ function QuickAdd() {
   const onSubmit = (e) => {
     e.preventDefault();
     if (!finalCategory) return;
-    submit({ title, amount, type, category: finalCategory });
+    submit({ title, amount, type, category: finalCategory, owedBy: owedBy.trim() });
   };
 
   return (
@@ -170,6 +173,12 @@ function QuickAdd() {
           {category === "__custom" && (
             <input placeholder="Category name" aria-label="Custom category" value={custom}
               onChange={(e) => setCustom(e.target.value)} className={`${inputClass} -mt-2 mb-6`} />
+          )}
+
+          {/* Work expense or money lent: kept out of the budget until repaid */}
+          {type === "expense" && (
+            <input placeholder="Who owes you this back? (optional)" aria-label="Owed back by" value={owedBy}
+              onChange={(e) => setOwedBy(e.target.value)} className={`${inputClass} mb-6`} />
           )}
 
           <Button type="submit" size="lg" className="w-full" disabled={saving || !(Number(amount) > 0) || !finalCategory}>

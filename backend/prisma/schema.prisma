@@ -25,17 +25,21 @@ model User {
 }
 
 model Transaction {
-  id          String   @id @default(uuid())
-  userId      String
-  title       String
-  amount      Float
-  type        String
-  category    String
-  date        DateTime
-  createdAt   DateTime @default(now())
-  recurringId String?
-  source      String? // "email" | "sms" when auto-imported
-  externalRef String? // bank reference (RRN/UPI ref) or text hash, for de-duplication
+  id           String    @id @default(uuid())
+  userId       String
+  title        String
+  amount       Float
+  type         String
+  category     String
+  date         DateTime
+  createdAt    DateTime  @default(now())
+  recurringId  String?
+  source       String? // "email" | "sms" when auto-imported
+  // Money you expect back (work expense, lent to a friend)
+  owedBy       String? // who owes you: "Acme", "Rahul"
+  settledAt    DateTime? // when they paid you back
+  repaymentFor String? // set on the income entry that repays another transaction
+  externalRef  String? // bank reference (RRN/UPI ref) or text hash, for de-duplication
 
   user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   recurring RecurringTransaction? @relation(fields: [recurringId], references: [id], onDelete: SetNull)

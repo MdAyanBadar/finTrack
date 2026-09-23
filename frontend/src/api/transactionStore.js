@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "./api";
+import { saveLocal, loadLocal } from "./persist";
 
 /* =========================
    SHARED TRANSACTION CACHE
@@ -14,10 +15,20 @@ const listeners = new Set();
 
 const currentToken = () => localStorage.getItem("token");
 
-const getCached = () => (cache && cache.token === currentToken() ? cache.data : null);
+const getCached = () => {
+  if (cache && cache.token === currentToken()) return cache.data;
+  // Cold start / offline: last data saved on this device
+  const stored = loadLocal("transactions");
+  if (stored) {
+    cache = { token: currentToken(), data: stored.data };
+    return cache.data;
+  }
+  return null;
+};
 
 const publish = (data) => {
   cache = { token: currentToken(), data };
+  saveLocal("transactions", data);
   listeners.forEach((fn) => fn(data));
 };
 

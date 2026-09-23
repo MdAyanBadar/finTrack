@@ -3,6 +3,7 @@ import { House, ArrowLeftRight, ChartPie, Target, Plus } from "lucide-react";
 import { openQuickAdd } from "../utils/quickAdd";
 import { prefetchTransactions } from "../api/transactionStore";
 import { useResource } from "../api/resourceStore";
+import OfflineBar from "./OfflineBar";
 
 const TABS = [
   { to: "/", label: "Home", icon: House, end: true },
@@ -101,6 +102,7 @@ function AppShell({ children }) {
 
   return (
     <div className="min-h-dvh bg-bg">
+      <OfflineBar />
       {showNav && <TopBar />}
       <main>{children}</main>
       {showNav && <TabBar />}

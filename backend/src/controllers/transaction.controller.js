@@ -32,6 +32,7 @@ export const createTransaction = async (req, res) => {
   try {
     const { title, amount, type, category, date } = req.body;
     const value = Number(amount);
+    const owedBy = req.body.owedBy ? String(req.body.owedBy).trim().slice(0, 60) : null;
 
     if (!String(title ?? "").trim() || !String(category ?? "").trim())
       return res.status(400).json({ message: "Title and category are required" });
@@ -54,6 +55,8 @@ export const createTransaction = async (req, res) => {
         category: String(category).trim(),
         date: when,
         userId: req.userId,
+        // Only an expense can be owed back to you
+        owedBy: type === "expense" ? owedBy || null : null,
       },
     });
 
@@ -94,6 +97,13 @@ export const updateTransaction = async (req, res) => {
       data.type = type;
       // Keep the sign consistent with the type (expenses are negative)
       if (data.amount !== undefined) data.amount = type === "expense" ? -Math.abs(data.amount) : Math.abs(data.amount);
+    }
+    if (req.body.owedBy !== undefined) {
+      const owedBy = req.body.owedBy ? String(req.body.owedBy).trim().slice(0, 60) : null;
+      if (owedBy && (data.type ?? "expense") === "income")
+        return res.status(400).json({ message: "Only an expense can be owed back" });
+      data.owedBy = owedBy;
+      if (!owedBy) data.settledAt = null;
     }
     if (date !== undefined) {
       const d = new Date(date);
@@ -139,6 +149,63 @@ export const updateTransaction = async (req, res) => {
   } catch (err) {
     console.error("Update transaction error:", err);
     res.status(500).json({ message: "Update failed" });
+  }
+};
+
+/**
+ * MARK AS REPAID
+ * Adds the money back as an income entry and marks the original settled.
+ * Both are left out of budget totals: they cancel each other out.
+ */
+export const settleTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const original = await prisma.transaction.findFirst({ where: { id, userId: req.userId } });
+
+    if (!original) return res.status(404).json({ message: "Transaction not found" });
+    if (!original.owedBy) return res.status(400).json({ message: "Nobody owes you for this one" });
+    if (original.settledAt) return res.status(400).json({ message: "Already marked as repaid" });
+
+    const when = req.body?.date ? new Date(req.body.date) : new Date();
+    if (Number.isNaN(when.getTime())) return res.status(400).json({ message: "Invalid date" });
+
+    const [repayment, transaction] = await prisma.$transaction([
+      prisma.transaction.create({
+        data: {
+          userId: req.userId,
+          title: `Repaid by ${original.owedBy}`,
+          amount: Math.abs(original.amount),
+          type: "income",
+          category: "Reimbursement",
+          date: when,
+          repaymentFor: original.id,
+        },
+      }),
+      prisma.transaction.update({ where: { id }, data: { settledAt: when } }),
+    ]);
+
+    res.json({ transaction, repayment });
+  } catch (err) {
+    console.error("Settle transaction error:", err);
+    res.status(500).json({ message: "Couldn't mark it as repaid" });
+  }
+};
+
+/**
+ * UNDO "mark as repaid": removes the income entry again
+ */
+export const unsettleTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const original = await prisma.transaction.findFirst({ where: { id, userId: req.userId } });
+    if (!original) return res.status(404).json({ message: "Transaction not found" });
+
+    await prisma.transaction.deleteMany({ where: { userId: req.userId, repaymentFor: id } });
+    const transaction = await prisma.transaction.update({ where: { id }, data: { settledAt: null } });
+    res.json({ transaction });
+  } catch (err) {
+    console.error("Unsettle transaction error:", err);
+    res.status(500).json({ message: "Couldn't undo it" });
   }
 };
 

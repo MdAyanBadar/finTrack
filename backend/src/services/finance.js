@@ -21,6 +21,8 @@ export const financeToday = async (userId, timeZone, now = new Date()) => {
   ]);
 
   const cycleTx = txs.filter((t) => {
+    // Money owed back to you (and its repayment) isn't your own spending
+    if (t.owedBy || t.repaymentFor) return false;
     const n = localDayNumber(t.date, timeZone);
     return n >= cycle.start && n < cycle.end;
   });

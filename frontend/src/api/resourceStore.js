@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "./api";
+import { saveLocal, loadLocal } from "./persist";
 
 /* =========================
    SMALL SHARED CACHE FOR GET ENDPOINTS
@@ -13,10 +14,17 @@ const listeners = new Map(); // path -> Set(fn)
 const token = () => localStorage.getItem("token");
 const cached = (path) => {
   const c = caches.get(path);
-  return c && c.token === token() ? c.data : undefined;
+  if (c && c.token === token()) return c.data;
+  const stored = loadLocal(`res:${path}`);
+  if (stored) {
+    caches.set(path, { token: token(), data: stored.data });
+    return stored.data;
+  }
+  return undefined;
 };
 const publish = (path, data) => {
   caches.set(path, { token: token(), data });
+  saveLocal(`res:${path}`, data);
   listeners.get(path)?.forEach((fn) => fn(data));
 };
 

@@ -6,6 +6,7 @@ import {
   revokeKey,
   previewMessage,
   ingestMessage,
+  todaySummary,
 } from "../controllers/ingest.controller.js";
 
 const router = express.Router();
@@ -15,6 +16,9 @@ router.use(express.text({ type: "text/plain", limit: "20kb" }));
 
 // Called by the Gmail script / Shortcut; authenticated by the import key, not a login
 router.post("/", ingestMessage);
+
+// Read-only "what can I spend today" for Siri / Shortcuts
+router.get("/summary", todaySummary);
 
 router.get("/key", protect, getKeyStatus);
 router.post("/key", protect, createKey);

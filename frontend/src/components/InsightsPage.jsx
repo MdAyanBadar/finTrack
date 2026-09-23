@@ -28,7 +28,7 @@ function InsightsPage() {
       </Section>
 
       <Section title="Calendar">
-        <SpendingCalendar transactions={f.transactions} salaryDay={f.salaryDay} budget={f.budget} dailyBudget={f.dailyBudget}
+        <SpendingCalendar transactions={f.personal} salaryDay={f.salaryDay} budget={f.budget} dailyBudget={f.dailyBudget}
           noSpendKeys={f.streaks.noSpendKeys} />
       </Section>
 

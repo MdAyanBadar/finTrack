@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search, ArrowLeftRight, Repeat, Mail } from "lucide-react";
+import { Search, ArrowLeftRight, Repeat, Mail, HandCoins } from "lucide-react";
 import api from "../api/api";
 import { useTransactions, deleteWithUndo } from "../api/transactionStore";
 import { toast } from "../utils/toast";
@@ -23,6 +23,7 @@ const TYPES = [
   { value: "all", label: "All" },
   { value: "expense", label: "Spent" },
   { value: "income", label: "Received" },
+  { value: "owed", label: "Owed to you" },
 ];
 
 // datetime-local value in local time
@@ -61,7 +62,12 @@ function Transactions() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return inPeriod
-      .filter((t) => type === "all" || (type === "expense" ? t.amount < 0 : t.amount > 0))
+      .filter((t) =>
+        type === "all" ? true
+          : type === "owed" ? t.owedBy && !t.settledAt
+          : type === "expense" ? t.amount < 0 && !t.owedBy
+          : t.amount > 0 && !t.repaymentFor
+      )
       .filter((t) => category === "all" || t.category === category)
       .filter((t) => !q || t.title.toLowerCase().includes(q) || t.category.toLowerCase().includes(q))
       .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -80,8 +86,10 @@ function Transactions() {
     return [...map.values()];
   }, [filtered]);
 
-  const totalOut = filtered.filter((t) => t.amount < 0).reduce((a, t) => a - t.amount, 0);
-  const totalIn = filtered.filter((t) => t.amount > 0).reduce((a, t) => a + t.amount, 0);
+  // Owed money and its repayment cancel out, so they're left out of the totals
+  const totalOut = filtered.filter((t) => t.amount < 0 && !t.owedBy).reduce((a, t) => a - t.amount, 0);
+  const totalIn = filtered.filter((t) => t.amount > 0 && !t.repaymentFor).reduce((a, t) => a + t.amount, 0);
+  const totalOwed = filtered.filter((t) => t.owedBy && !t.settledAt).reduce((a, t) => a - t.amount, 0);
 
   const startEdit = (t) => {
     setError("");
@@ -96,6 +104,8 @@ function Transactions() {
       source: t.source,
       originalCategory: t.category,
       remember: Boolean(t.source),
+      owedBy: t.owedBy || "",
+      settledAt: t.settledAt,
     });
   };
 
@@ -114,6 +124,7 @@ function Transactions() {
         category: editing.category.trim(),
         date: new Date(editing.date).toISOString(),
         rememberPayee: categoryChanged && editing.remember,
+        owedBy: editing.type === "expense" ? editing.owedBy.trim() || null : null,
       });
       const { rememberedCount, ...saved } = res.data;
       if (rememberedCount > 0) {
@@ -128,6 +139,40 @@ function Transactions() {
       setEditing(null);
     } catch (err) {
       setError(err.response?.data?.message || "Couldn't save changes");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // People who already owe you something, for the suggestions list
+  const owedPeople = [...new Set(transactions.filter((t) => t.owedBy).map((t) => t.owedBy))].sort();
+
+  const settle = async () => {
+    try {
+      setSaving(true);
+      const res = await api.post(`/transactions/${editing.id}/settle`);
+      const { transaction, repayment } = res.data;
+      setTransactions((prev) => [repayment, ...prev.map((t) => (t.id === transaction.id ? transaction : t))]);
+      setEditing(null);
+      toast(`${formatINR(Math.abs(transaction.amount))} from ${transaction.owedBy} received`);
+    } catch (err) {
+      setError(err.response?.data?.message || "Couldn't mark it as repaid");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const unsettle = async () => {
+    try {
+      setSaving(true);
+      const res = await api.delete(`/transactions/${editing.id}/settle`);
+      setTransactions((prev) => [
+        res.data.transaction,
+        ...prev.filter((t) => t.id !== editing.id && t.repaymentFor !== editing.id),
+      ]);
+      setEditing(null);
+    } catch {
+      setError("Couldn't undo it");
     } finally {
       setSaving(false);
     }
@@ -163,6 +208,12 @@ function Transactions() {
           <p className={`tabular text-xl font-semibold mt-1 ${totalIn > 0 ? "text-pos" : ""}`}>{formatINR(totalIn)}</p>
         </Card>
       </div>
+
+      {totalOwed > 0 && (
+        <p className="text-[13px] text-warn -mt-3 mb-4 px-1 tabular">
+          + {formatINR(totalOwed)} owed back to you (not counted above)
+        </p>
+      )}
 
       {/* Search + filters */}
       <div className="relative mb-3">
@@ -251,6 +302,28 @@ function Transactions() {
                   <span className="block text-[13px] text-ink-3">Applies to future bank imports and updates earlier ones from this payee.</span>
                 </span>
               </label>
+            )}
+            {/* Work expense / money lent: stays out of the budget until repaid */}
+            {editing.type === "expense" && !editing.settledAt && (
+              <Field label="Owed back by (optional)" hint="A work expense to claim, or money you lent. It won't count against your budget until it's repaid.">
+                <Input list="owed-people" placeholder="Acme, Rahul…" value={editing.owedBy}
+                  onChange={(e) => setEditing({ ...editing, owedBy: e.target.value })} />
+                <datalist id="owed-people">
+                  {owedPeople.map((p) => <option key={p} value={p} />)}
+                </datalist>
+              </Field>
+            )}
+            {editing.owedBy && !editing.settledAt && (
+              <Button variant="secondary" className="w-full" onClick={settle} disabled={saving}>
+                <HandCoins className="w-4 h-4" /> Mark as repaid by {editing.owedBy}
+              </Button>
+            )}
+            {editing.settledAt && (
+              <div className="p-3 rounded-2xl bg-surface-2 text-sm">
+                <p className="text-pos font-medium">Repaid by {editing.owedBy}</p>
+                <p className="text-[13px] text-ink-3 mb-2">A matching income entry was added on {dayLabel(editing.settledAt)}.</p>
+                <button onClick={unsettle} className="text-[13px] font-semibold text-accent-ink">Undo repayment</button>
+              </div>
             )}
             <Field label="Date & time">
               <Input type="datetime-local" value={editing.date} className="[color-scheme:dark]"

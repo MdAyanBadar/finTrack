@@ -25,8 +25,17 @@ export function useFinance() {
   return useMemo(() => {
     const now = new Date();
     const cycle = getPayCycle(salaryDay, now);
-    const cycleTx = transactions.filter((t) => isInCycle(t.date, cycle));
-    const history = getCycleHistory(transactions, salaryDay, now);
+
+    // Money owed back to you (and its repayment when it arrives) is not your
+    // own spending, so it stays out of every budget figure.
+    const personal = transactions.filter((t) => !t.owedBy && !t.repaymentFor);
+    const owedItems = transactions
+      .filter((t) => t.owedBy && !t.settledAt)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    const owedTotal = owedItems.reduce((a, t) => a + Math.abs(t.amount), 0);
+
+    const cycleTx = personal.filter((t) => isInCycle(t.date, cycle));
+    const history = getCycleHistory(personal, salaryDay, now);
 
     const income = cycleTx.filter((t) => t.amount > 0).reduce((a, t) => a + t.amount, 0);
     const spent = cycleTx.filter((t) => t.amount < 0).reduce((a, t) => a - t.amount, 0);
@@ -59,15 +68,15 @@ export function useFinance() {
     }
 
     const savings = getSavedFromCycles(history, budget);
-    const streaks = getStreaks(transactions, salaryDay, budget, now);
+    const streaks = getStreaks(personal, salaryDay, budget, now);
 
     return {
       loading: txLoading || budgetLoading,
-      transactions, cycleTx, history, cycle, nextCycle,
+      transactions, personal, cycleTx, history, cycle, nextCycle, owedItems, owedTotal,
       budget, goal, salaryDay, recurring, limits,
       income, spent, balance, upcoming, afterSalary, upcomingDue, spendable,
       dailyBudget, todaySpent, leftToday, spentByCategory, savings, streaks,
-      colorMap: categoryColorMap(transactions),
+      colorMap: categoryColorMap(personal),
       dayOfCycle: cycle.totalDays - cycle.remainingDays + 1,
     };
   }, [transactions, recurring, limits, budget, goal, salaryDay, txLoading, budgetLoading]);

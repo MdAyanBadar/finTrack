@@ -7,6 +7,7 @@ import { useResource } from "../api/resourceStore";
 import { Page, Card, Section, ProgressBar, EmptyState, Button, Skeleton } from "./ui";
 import { Avatar } from "./AppShell";
 import TransactionRow from "./TransactionRow";
+import OwedCard from "./OwedCard";
 
 function Home() {
   const f = useFinance();
@@ -25,7 +26,7 @@ function Home() {
 
   const {
     cycle, dailyBudget, todaySpent, leftToday, spent, balance, income, budget, upcoming, afterSalary,
-    limits, spentByCategory, goal, savings, cycleTx, transactions, dayOfCycle, streaks,
+    limits, spentByCategory, goal, savings, cycleTx, transactions, dayOfCycle, streaks, owedItems, owedTotal,
   } = f;
 
   const cycleProgress = (dayOfCycle / cycle.totalDays) * 100;
@@ -131,6 +132,8 @@ function Home() {
           </div>
         </Card>
       )}
+
+      {owedItems.length > 0 && <OwedCard items={owedItems} total={owedTotal} />}
 
       {/* Upcoming bills */}
       {nextBills.length > 0 && (

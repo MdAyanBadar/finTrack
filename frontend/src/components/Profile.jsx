@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Info, Smartphone, LogOut, ChevronRight } from "lucide-react";
 import { useResource } from "../api/resourceStore";
+import { clearLocal } from "../api/persist";
 import { Page, PageHeader, Card, Section, Sheet, Button, Skeleton } from "./ui";
 import AutoImport from "./AutoImport";
+import SiriShortcut from "./SiriShortcut";
 import NotificationSettings from "./NotificationSettings";
 
 function Profile() {
@@ -13,6 +15,7 @@ function Profile() {
   const [installHelp, setInstallHelp] = useState(false);
 
   const logout = () => {
+    clearLocal();
     localStorage.removeItem("token");
     navigate("/login");
   };
@@ -44,6 +47,10 @@ function Profile() {
 
       <Section title="Automation">
         <AutoImport />
+      </Section>
+
+      <Section title="Siri">
+        <SiriShortcut />
       </Section>
 
       <Section title="App">
