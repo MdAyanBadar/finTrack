@@ -10,6 +10,8 @@ const MAX_TEXT = 5000;
 const SOURCES = ["email", "sms"];
 
 // Accepts JSON { text, date?, source? } or a plain-text body
+const rupees = (n) => `₹${Math.abs(n).toLocaleString("en-IN")}`;
+
 const readBody = (req) =>
   typeof req.body === "string" ? { text: req.body } : req.body || {};
 
@@ -85,12 +87,21 @@ export const ingestMessage = async (req, res) => {
 
   const body = text.slice(0, MAX_TEXT);
   const parsed = parseBankSms(body);
-  if (!parsed) return res.json({ status: "ignored", reason: "Not a completed transaction" });
+  if (!parsed)
+    return res.json({
+      status: "ignored",
+      reason: "Not a completed transaction",
+      text: "Couldn't read that. Try \"spent 250 at Swiggy\".",
+    });
 
-  // Same bank reference (or identical text) is only imported once
+  // A bank reference is unique, so the same payment is never imported twice.
+  // Without one (voice entries, bank mails with no ref) the text is matched
+  // per minute: a repeated email is skipped, but buying the same coffee twice
+  // in a day still goes through.
+  const when = pickDate(date);
   const externalRef = parsed.ref
     ? `ref:${parsed.ref}`
-    : `txt:${sha256(body.replace(/\s+/g, " ").trim())}`;
+    : `txt:${sha256(`${body.replace(/\s+/g, " ").trim()}|${when.toISOString().slice(0, 16)}`)}`;
 
   // The user's own rule for this payee beats the parser's guess
   const rule = await prisma.payeeRule.findUnique({
@@ -105,15 +116,17 @@ export const ingestMessage = async (req, res) => {
         amount: parsed.amount,
         type: parsed.type,
         category: rule?.category ?? parsed.category,
-        date: pickDate(date),
+        date: when,
         source: SOURCES.includes(source) ? source : "sms",
         externalRef,
       },
     });
-    res.status(201).json({ status: "added", transaction: tx });
+    // Short line for Siri / Shortcuts
+    const text = `Added ${tx.title} ${tx.amount < 0 ? "-" : "+"}${rupees(tx.amount)}${tx.category ? ` to ${tx.category}` : ""}`;
+    res.status(201).json({ status: "added", text, transaction: tx });
     notifyImported(user.id, tx).catch((err) => console.error("Notify error:", err));
   } catch (err) {
-    if (err.code === "P2002") return res.json({ status: "duplicate" });
+    if (err.code === "P2002") return res.json({ status: "duplicate", text: "Already added" });
     console.error("Ingest error:", err);
     res.status(500).json({ message: "Import failed" });
   }

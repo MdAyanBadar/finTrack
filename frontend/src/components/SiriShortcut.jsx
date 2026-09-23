@@ -60,13 +60,13 @@ function SiriShortcut() {
         <ol start={3} className="mt-2 space-y-1.5 text-sm text-ink-2 list-decimal list-inside">
           <li>Open <b className="text-ink">Headers</b> → add <b className="text-ink">X-Ingest-Key</b> with your key as the value.</li>
           <li>Add <b className="text-ink">Get Dictionary Value</b>, key <b className="text-ink">text</b>.</li>
-          <li>Add <b className="text-ink">Show Result</b> (or <b className="text-ink">Speak Text</b>).</li>
+          <li>Add <b className="text-ink">Speak Text</b> (or Show Alert / Quick Look) set to that value.</li>
           <li>Name it <b className="text-ink">How much can I spend</b>, then say &ldquo;Hey Siri, how much can I spend&rdquo;.</li>
         </ol>
       </div>
 
       <div className="mt-6">
-        <p className="text-sm font-semibold">2 · Log an expense by voice (optional)</p>
+        <p className="text-sm font-semibold">2 · Add an expense by voice (optional)</p>
         <ol className="mt-2 space-y-1.5 text-sm text-ink-2 list-decimal list-inside">
           <li>New shortcut → <b className="text-ink">Ask for Input</b> (Text), prompt &ldquo;What did you spend?&rdquo;</li>
           <li><b className="text-ink">Get Contents of URL</b>, method <b className="text-ink">POST</b>:</li>
@@ -75,7 +75,8 @@ function SiriShortcut() {
         <ol start={3} className="mt-2 space-y-1.5 text-sm text-ink-2 list-decimal list-inside">
           <li>Header <b className="text-ink">X-Ingest-Key</b> with your key.</li>
           <li>Request body <b className="text-ink">JSON</b>: key <b className="text-ink">text</b> → value <b className="text-ink">Provided Input</b>, and key <b className="text-ink">source</b> → <b className="text-ink">sms</b>.</li>
-          <li>Name it <b className="text-ink">Log expense</b>. Then say &ldquo;spent 250 at Swiggy&rdquo; when it asks.</li>
+          <li>Add <b className="text-ink">Get Dictionary Value</b>, key <b className="text-ink">text</b>, then <b className="text-ink">Speak Text</b> — it replies &ldquo;Added Swiggy -₹250 to Food&rdquo;.</li>
+          <li>Name it <b className="text-ink">Add expense</b> (Siri mishears &ldquo;log&rdquo; as &ldquo;lock&rdquo;). Then say &ldquo;spent 250 at Swiggy&rdquo; when it asks.</li>
         </ol>
       </div>
 

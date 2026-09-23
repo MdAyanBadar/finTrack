@@ -39,6 +39,7 @@ const MERCHANT_PATTERNS = [
   /;\s*([A-Za-z][\w .&'-]{1,40}?)\s+credited\b/i,         // ICICI: "; NAME credited"
   new RegExp(String.raw`\bupi\/(?:p2[am]\/)?\d+\/([^/\s][^/]{1,40}?)(?=\/|\s+not\s+you\b|\s{2,}|[.;,](?:\s|$)|$)`, "i"), // Axis: UPI/P2M/123/NAME
   nameAfter(String.raw`\bat`),                             // card: at MERCHANT on ...
+  nameAfter(String.raw`\bon`, "[A-Za-z]"),                 // spoken: "spent 60 on chai"
   nameAfter(String.raw`\bto`),                             // Sent ... To NAME On ... / slice "To KARTHIK G RRN"
   nameAfter(String.raw`\bfrom`, "[A-Za-z]"),                // credited ... from NAME
 ];
@@ -86,7 +87,7 @@ export const parseBankSms = (raw) => {
     if (m) {
       const candidate = clean(m[1]);
       // Skip our own account references like "A/c XX1234" or "your account"
-      if (!/^(a\/?c\b|acct|account|your|xx|\*+\d|card|hdfc bank|sbi|icici bank|slice|us\b|talk)/i.test(candidate)) {
+      if (!/^(a\/?c\b|acct|account|your|xx|\*+\d|card|hdfc bank|sbi|icici bank|slice|us\b|talk|date\b)/i.test(candidate)) {
         merchant = candidate;
         break;
       }
