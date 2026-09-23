@@ -50,6 +50,7 @@ export const postDueRecurring = async (userId) => {
           type: r.type,
           category: r.category,
           date,
+          potId: r.potId,
         })),
         skipDuplicates: true,
       }),
@@ -76,7 +77,7 @@ export const getRecurring = async (req, res) => {
 
 // Validates the body shared by create and update; returns { error } or { data }
 const parseRecurring = (body) => {
-  const { title, amount, type, category, dayOfMonth, endMonth } = body;
+  const { title, amount, type, category, dayOfMonth, endMonth, potId } = body;
   const value = Number(amount);
 
   if (!title?.trim() || !category?.trim())
@@ -98,6 +99,7 @@ const parseRecurring = (body) => {
       category: category.trim(),
       dayOfMonth,
       endMonth: endMonth ?? null,
+      potId: potId || null, // a BC/chit payment feeds this savings pot
     },
   };
 };

@@ -18,11 +18,12 @@ const ordinal = (n) => {
 const formatMonth = (ym) =>
   new Date(`${ym}-01T00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 
-const EMPTY = { title: "", amount: "", type: "expense", category: "Bills", dayOfMonth: "", repeat: "always", endMonth: "" };
+const EMPTY = { title: "", amount: "", type: "expense", category: "Bills", dayOfMonth: "", repeat: "always", endMonth: "", potId: "" };
 
 // Rent, EMIs, subscriptions, salary... added automatically every month on their day
 function RecurringManager({ salaryDay = 1 }) {
   const { data: items, setData: setItems } = useResource("/recurring", []);
+  const { data: pots } = useResource("/pots", []);
   const { transactions } = useTransactions();
 
   // Already paid? Same amount recorded within a day of the due date
@@ -40,6 +41,7 @@ function RecurringManager({ salaryDay = 1 }) {
   const [error, setError] = useState("");
 
   const cycleStartKey = toDateKey(getPayCycle(salaryDay).start);
+  const openPots = pots.filter((p) => !p.closedAt);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const sorted = [...items].sort((a, b) => a.dayOfMonth - b.dayOfMonth);
 
@@ -54,12 +56,14 @@ function RecurringManager({ salaryDay = 1 }) {
     setForm({
       id: i.id, title: i.title, amount: String(Math.abs(i.amount)), type: i.type, category: i.category,
       dayOfMonth: String(i.dayOfMonth), repeat: i.endMonth ? "until" : "always", endMonth: i.endMonth || "",
+      potId: i.potId || "",
     });
   };
 
   const payloadFrom = (f) => ({
     title: f.title.trim(), amount: Number(f.amount), type: f.type, category: f.category.trim() || "General",
     dayOfMonth: Number(f.dayOfMonth), endMonth: f.repeat === "until" ? f.endMonth : null,
+    potId: f.type === "expense" ? f.potId || null : null,
   });
 
   const save = async () => {
@@ -141,6 +145,7 @@ function RecurringManager({ salaryDay = 1 }) {
                     <p className="text-[15px] font-medium truncate">{i.title}</p>
                     <p className="text-[13px] text-ink-3 truncate">
                       {i.category} · {i.endMonth ? `until ${formatMonth(i.endMonth)}` : "every month"}
+                      {i.potId && ` · ${pots.find((p) => p.id === i.potId)?.name ?? "savings"}`}
                     </p>
                     {missed && <p className="text-[12px] text-warn mt-0.5">{shortDate(missed)} not counted yet</p>}
                   </div>
@@ -177,6 +182,14 @@ function RecurringManager({ salaryDay = 1 }) {
                 newLabel="New category…" placeholder="Category name"
                 onChange={(v) => setForm((f) => ({ ...f, category: v }))} />
             </Field>
+            {form.type === "expense" && openPots.length > 0 && (
+              <Field label="Savings pot" hint="A BC / chit payment: each month's payment is tagged to the pot automatically.">
+                <Select value={form.potId} onChange={set("potId")}>
+                  <option value="">Not savings</option>
+                  {openPots.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+              </Field>
+            )}
             <Field label="Repeats">
               <Select value={form.repeat} onChange={set("repeat")}>
                 <option value="always">Every month, no end</option>
