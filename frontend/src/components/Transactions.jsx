@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search, ArrowLeftRight, Repeat, Mail, HandCoins } from "lucide-react";
+import { Search, ArrowLeftRight, Repeat, Mail, HandCoins, Users } from "lucide-react";
 import api from "../api/api";
 import { useTransactions, deleteWithUndo } from "../api/transactionStore";
 import { toast } from "../utils/toast";
@@ -9,7 +9,7 @@ import { allCategories } from "../utils/categories";
 import { formatINR, dayLabel } from "../utils/format";
 import { openQuickAdd } from "../utils/quickAdd";
 import {
-  Page, PageHeader, Card, Chip, Sheet, Segmented, Field, Input, Button, EmptyState, Skeleton, inputClass,
+  Page, PageHeader, Card, Chip, Sheet, Segmented, Field, Input, Select, Button, EmptyState, Skeleton, inputClass,
 } from "./ui";
 import TransactionRow from "./TransactionRow";
 import SwipeRow from "./SwipeRow";
@@ -37,6 +37,9 @@ const toLocalInput = (value) => {
 function Transactions() {
   const { transactions, setTransactions, loading, refresh } = useTransactions();
   const { data: budget } = useResource("/budget", { salaryDay: 1 });
+  const { data: pots } = useResource("/pots", []);
+  const { data: splitGroups } = useResource("/split-groups", []);
+  const [splitting, setSplitting] = useState(null); // { id, title, amount, people, includeMe }
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState("cycle");
   const [type, setType] = useState("all");
@@ -65,7 +68,7 @@ function Transactions() {
     return inPeriod
       .filter((t) =>
         type === "all" ? true
-          : type === "owed" ? t.owedBy && !t.settledAt
+          : type === "owed" ? (t.owedBy && !t.settledAt) || (t.shares ?? []).some((s) => !s.settledAt)
           : type === "expense" ? t.amount < 0 && !t.owedBy
           : t.amount > 0 && !t.repaymentFor
       )
@@ -106,6 +109,8 @@ function Transactions() {
       originalCategory: t.category,
       remember: Boolean(t.source),
       owedBy: t.owedBy || "",
+      potId: t.potId || "",
+      shares: t.shares ?? [],
       settledAt: t.settledAt,
     });
   };
@@ -126,6 +131,7 @@ function Transactions() {
         date: new Date(editing.date).toISOString(),
         rememberPayee: categoryChanged && editing.remember,
         owedBy: editing.type === "expense" ? editing.owedBy.trim() || null : null,
+        potId: editing.type === "expense" ? editing.potId || null : null,
       });
       const { rememberedCount, ...saved } = res.data;
       if (rememberedCount > 0) {
@@ -174,6 +180,60 @@ function Transactions() {
       setEditing(null);
     } catch {
       setError("Couldn't undo it");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* Split a bill: your share stays here, everyone else's becomes money owed to you */
+  const openSplit = (tx) => {
+    setError("");
+    setEditing(null);
+    setSplitting({ id: tx.id, title: tx.title, total: Math.abs(tx.amount), people: splitGroups[0]?.members ?? [], includeMe: true });
+  };
+
+  const doSplit = async () => {
+    try {
+      setSaving(true);
+      await api.post(`/transactions/${splitting.id}/split`, {
+        people: splitting.people,
+        includeMe: splitting.includeMe,
+      });
+      await refresh();
+      toast(`Split ${splitting.people.length + (splitting.includeMe ? 1 : 0)} ways`);
+      setSplitting(null);
+    } catch (err) {
+      setError(err.response?.data?.message || "Couldn't split it");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const settleShare = async (share, undo) => {
+    try {
+      setSaving(true);
+      const url = `/transactions/${editing.id}/shares/${share.id}/settle`;
+      await (undo ? api.delete(url) : api.post(url));
+      const list = await refresh();
+      const fresh = list.find((t) => t.id === editing.id);
+      setEditing((e) => ({ ...e, shares: fresh?.shares ?? [] }));
+      toast(undo ? `${share.person}'s payment undone` : `${formatINR(share.amount)} from ${share.person} received`);
+    } catch (err) {
+      setError(err.response?.data?.message || "Couldn't update that share");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const undoSplit = async (tx) => {
+    try {
+      setSaving(true);
+      await api.delete(`/transactions/${tx.id}/split`);
+      await refresh();
+      setEditing(null);
+      toast("Split undone");
+    } catch (err) {
+      setError(err.response?.data?.message || "Couldn't undo the split");
     } finally {
       setSaving(false);
     }
@@ -268,6 +328,80 @@ function Transactions() {
         )}
       </div>
 
+      {/* Split sheet */}
+      <Sheet open={Boolean(splitting)} onClose={() => setSplitting(null)} title="Split this bill">
+        {splitting && (() => {
+          const parts = splitting.people.length + (splitting.includeMe ? 1 : 0);
+          const share = parts > 0 ? Math.floor((splitting.total / parts) * 100) / 100 : 0;
+          const mine = Number((splitting.total - share * splitting.people.length).toFixed(2));
+          const known = [...new Set([...splitGroups.flatMap((g) => g.members), ...transactions.filter((t) => t.owedBy).map((t) => t.owedBy)])].sort();
+          const toggle = (name) =>
+            setSplitting((s) => ({
+              ...s,
+              people: s.people.includes(name) ? s.people.filter((p) => p !== name) : [...s.people, name],
+            }));
+          return (
+            <div className="space-y-4">
+              <div className="bg-surface-2 rounded-2xl p-4">
+                <p className="text-[13px] text-ink-3">{splitting.title}</p>
+                <p className="tabular text-2xl font-bold">{formatINR(splitting.total)}</p>
+              </div>
+
+              {splitGroups.length > 0 && (
+                <Field label="Group">
+                  <Select value="" onChange={(e) => {
+                    const g = splitGroups.find((x) => x.id === e.target.value);
+                    if (g) setSplitting((s) => ({ ...s, people: [...g.members] }));
+                  }}>
+                    <option value="">Choose a group…</option>
+                    {splitGroups.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.members.length + 1})</option>)}
+                  </Select>
+                </Field>
+              )}
+
+              <Field label="Split with">
+                <div className="flex flex-wrap gap-2">
+                  {known.map((name) => (
+                    <Chip key={name} active={splitting.people.includes(name)} onClick={() => toggle(name)}>{name}</Chip>
+                  ))}
+                  {known.length === 0 && <p className="text-[13px] text-ink-3">Add a group in Plan first, or type a name below.</p>}
+                </div>
+              </Field>
+
+              <Field label="Someone else">
+                <Input placeholder="Type a name and press Enter"
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    const name = e.currentTarget.value.trim();
+                    if (name && !splitting.people.includes(name)) setSplitting((s) => ({ ...s, people: [...s.people, name] }));
+                    e.currentTarget.value = "";
+                  }} />
+              </Field>
+
+              <label className="flex items-center gap-3 p-3 rounded-2xl bg-surface-2 cursor-pointer">
+                <input type="checkbox" checked={splitting.includeMe} className="w-4 h-4 accent-[#8b5cf6]"
+                  onChange={(e) => setSplitting((s) => ({ ...s, includeMe: e.target.checked }))} />
+                <span className="text-sm">Include my share</span>
+              </label>
+
+              {splitting.people.length > 0 && (
+                <div className="bg-surface-2 rounded-2xl p-4 text-sm">
+                  <p className="text-ink-2 mb-1.5">Split {parts} ways · {formatINR(share)} each</p>
+                  {splitting.includeMe && <p className="tabular text-ink-3">You keep {formatINR(mine)} as your spending</p>}
+                  <p className="tabular text-warn">{splitting.people.join(", ")} will owe you {formatINR(share * splitting.people.length)}</p>
+                </div>
+              )}
+
+              {error && <p className="text-sm text-neg">{error}</p>}
+              <Button className="w-full" onClick={doSplit} disabled={saving || splitting.people.length === 0}>
+                {saving ? "Splitting…" : "Split"}
+              </Button>
+            </div>
+          );
+        })()}
+      </Sheet>
+
       {/* Edit sheet */}
       <Sheet open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit transaction">
         {editing && (
@@ -309,6 +443,47 @@ function Transactions() {
                   newLabel="Someone else…" placeholder="Acme, Rahul…"
                   onChange={(v) => setEditing({ ...editing, owedBy: v })} />
               </Field>
+            )}
+            {editing.type === "expense" && pots.length > 0 && (
+              <Field label="Savings pot" hint="For a BC / chit payment or money put aside.">
+                <Select value={editing.potId} onChange={(e) => setEditing({ ...editing, potId: e.target.value })}>
+                  <option value="">Not savings</option>
+                  {pots.filter((p) => !p.closedAt || p.id === editing.potId).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            {!editing.settledAt && editing.type === "expense" && editing.shares.length === 0 && !editing.owedBy && (
+              <Button variant="secondary" className="w-full"
+                onClick={() => openSplit(transactions.find((t) => t.id === editing.id))} disabled={saving}>
+                <Users className="w-4 h-4" /> Split this bill
+              </Button>
+            )}
+            {editing.shares.length > 0 && (
+              <div className="rounded-2xl bg-surface-2 p-3">
+                <p className="text-sm text-ink-2 mb-2">
+                  Split {editing.shares.length + 1} ways · your share {formatINR(Number(editing.amount))}
+                </p>
+                <div className="space-y-1.5">
+                  {editing.shares.map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1 truncate">{s.person}</span>
+                      <span className={`tabular ${s.settledAt ? "text-pos" : "text-warn"}`}>{formatINR(s.amount)}</span>
+                      <button onClick={() => settleShare(s, Boolean(s.settledAt))} disabled={saving}
+                        className={`h-7 px-2.5 rounded-full text-[12px] font-semibold ${
+                          s.settledAt ? "bg-surface-3 text-ink-2" : "bg-pos/15 text-pos"
+                        }`}>
+                        {s.settledAt ? "Paid ✓" : "Received"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => undoSplit(transactions.find((t) => t.id === editing.id))}
+                  className="text-[13px] font-semibold text-accent-ink mt-2">
+                  Undo the split
+                </button>
+              </div>
             )}
             {editing.owedBy && !editing.settledAt && (
               <Button variant="secondary" className="w-full" onClick={settle} disabled={saving}>

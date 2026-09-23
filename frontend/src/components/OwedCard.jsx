@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { HandCoins, ChevronDown } from "lucide-react";
 import api from "../api/api";
-import { useTransactions } from "../api/transactionStore";
+import { loadTransactions, useTransactions } from "../api/transactionStore";
 import { formatINR, shortDate } from "../utils/format";
 import { toast } from "../utils/toast";
 import { Card, Section, CategoryIcon } from "./ui";
@@ -13,37 +13,39 @@ import { Card, Section, CategoryIcon } from "./ui";
    until it's repaid.
 ========================= */
 function OwedCard({ items, total }) {
-  const { setTransactions } = useTransactions();
+  useTransactions(); // keeps this card in step with the shared list
   const [busyId, setBusyId] = useState(null);
 
   const byPerson = items.reduce((acc, t) => {
-    (acc[t.owedBy] ||= []).push(t);
+    (acc[t.person] ||= []).push(t);
     return acc;
   }, {});
   const people = Object.entries(byPerson)
-    .map(([name, rows]) => ({ name, rows, total: rows.reduce((a, t) => a + Math.abs(t.amount), 0) }))
+    .map(([name, rows]) => ({ name, rows, total: rows.reduce((a, t) => a + t.amount, 0) }))
     .sort((a, b) => b.total - a.total);
 
   // One person: show their items straight away. Several: start collapsed.
   const [open, setOpen] = useState(people.length === 1 ? people[0].name : null);
 
-  const undo = async (tx) => {
+  const url = (item) =>
+    item.shareId ? `/transactions/${item.txId}/shares/${item.shareId}/settle` : `/transactions/${item.txId}/settle`;
+
+  const undo = async (item) => {
     try {
-      const res = await api.delete(`/transactions/${tx.id}/settle`);
-      setTransactions((prev) => [res.data.transaction, ...prev.filter((t) => t.id !== tx.id && t.repaymentFor !== tx.id)]);
+      await api.delete(url(item));
+      await loadTransactions();
     } catch {
       toast("Couldn't undo it", "error");
     }
   };
 
-  const settle = async (tx) => {
+  const settle = async (item) => {
     try {
-      setBusyId(tx.id);
-      const res = await api.post(`/transactions/${tx.id}/settle`);
-      const { transaction, repayment } = res.data;
-      setTransactions((prev) => [repayment, ...prev.map((t) => (t.id === transaction.id ? transaction : t))]);
-      toast(`${formatINR(Math.abs(tx.amount))} from ${tx.owedBy} received`, {
-        action: { label: "Undo", onClick: () => undo(tx) },
+      setBusyId(item.key);
+      await api.post(url(item));
+      await loadTransactions();
+      toast(`${formatINR(item.amount)} from ${item.person} received`, {
+        action: { label: "Undo", onClick: () => undo(item) },
       });
     } catch (err) {
       toast(err.response?.data?.message || "Couldn't mark it as repaid", "error");
@@ -91,17 +93,19 @@ function OwedCard({ items, total }) {
 
                 {expanded && (
                   <div className="divide-y divide-line/60 bg-surface-2/30">
-                    {p.rows.map((t) => (
-                      <div key={t.id} className="flex items-center gap-3 px-4 py-3">
-                        <CategoryIcon category={t.category} size="sm" />
+                    {p.rows.map((item) => (
+                      <div key={item.key} className="flex items-center gap-3 px-4 py-3">
+                        <CategoryIcon category={item.category} size="sm" />
                         <div className="min-w-0 flex-1">
-                          <p className="text-[15px] font-medium truncate">{t.title}</p>
-                          <p className="text-[13px] text-ink-3 truncate">{t.category} · {shortDate(t.date)}</p>
+                          <p className="text-[15px] font-medium truncate">{item.title}</p>
+                          <p className="text-[13px] text-ink-3 truncate">
+                            {item.split ? "their share" : item.category} · {shortDate(item.date)}
+                          </p>
                         </div>
-                        <span className="tabular text-[15px] font-semibold shrink-0">{formatINR(Math.abs(t.amount))}</span>
-                        <button onClick={() => settle(t)} disabled={busyId === t.id}
+                        <span className="tabular text-[15px] font-semibold shrink-0">{formatINR(item.amount)}</span>
+                        <button onClick={() => settle(item)} disabled={busyId === item.key}
                           className="h-8 px-3 rounded-full bg-pos/15 text-pos text-[13px] font-semibold shrink-0 disabled:opacity-50">
-                          {busyId === t.id ? "…" : "Received"}
+                          {busyId === item.key ? "…" : "Received"}
                         </button>
                       </div>
                     ))}

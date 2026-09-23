@@ -1,10 +1,13 @@
-import { Repeat, Mail, HandCoins } from "lucide-react";
+import { Repeat, Mail, HandCoins, Users } from "lucide-react";
 import { CategoryIcon, Amount } from "./ui";
+import { formatINR } from "../utils/format";
 
 // One transaction line: icon · title / meta · amount
 function TransactionRow({ t, meta, onClick }) {
   const Tag = onClick ? "button" : "div";
-  const owedPending = t.owedBy && !t.settledAt;
+  const shares = t.shares ?? [];
+  const owedFromSplit = shares.filter((s) => !s.settledAt).reduce((a, s) => a + s.amount, 0);
+  const owedPending = (t.owedBy && !t.settledAt) || owedFromSplit > 0;
   return (
     <Tag onClick={onClick}
       className={`w-full flex items-center gap-3.5 px-4 py-3 text-left ${onClick ? "hover:bg-surface-2/60 active:bg-surface-2 transition" : ""}`}>
@@ -14,6 +17,7 @@ function TransactionRow({ t, meta, onClick }) {
         <p className="text-[13px] text-ink-3 truncate flex items-center gap-1.5">
           {t.recurringId && <Repeat className="w-3 h-3 shrink-0" aria-label="Recurring" />}
           {t.source && <Mail className="w-3 h-3 shrink-0" aria-label="Auto-imported" />}
+          {shares.length > 0 && <Users className="w-3 h-3 shrink-0" aria-label="Split bill" />}
           {t.owedBy && (
             <HandCoins className={`w-3 h-3 shrink-0 ${t.settledAt ? "text-pos" : "text-warn"}`}
               aria-label={t.settledAt ? "Repaid" : "Owed back"} />
@@ -29,6 +33,12 @@ function TransactionRow({ t, meta, onClick }) {
             {t.settledAt ? "repaid" : `${t.owedBy} owes`}
           </p>
         )}
+        {owedFromSplit > 0 && (
+          <p className="tabular text-[11px] text-warn">
+            {formatINR(owedFromSplit)} owed by {shares.filter((s) => !s.settledAt).map((s) => s.person).join(", ")}
+          </p>
+        )}
+        {shares.length > 0 && owedFromSplit === 0 && <p className="text-[11px] text-pos">all paid back</p>}
       </div>
     </Tag>
   );

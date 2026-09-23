@@ -8,10 +8,13 @@ import { Page, Card, Section, ProgressBar, EmptyState, Button, Skeleton } from "
 import { Avatar } from "./AppShell";
 import TransactionRow from "./TransactionRow";
 import OwedCard from "./OwedCard";
+import { potStats } from "../utils/pots";
+import { PiggyBank } from "lucide-react";
 
 function Home() {
   const f = useFinance();
   const { data: user } = useResource("/users/me", null);
+  const { data: pots } = useResource("/pots", []);
 
   if (f.loading) {
     return (
@@ -26,7 +29,7 @@ function Home() {
 
   const {
     cycle, dailyBudget, todaySpent, leftToday, spent, balance, income, budget, upcoming, afterSalary,
-    limits, spentByCategory, goal, savings, cycleTx, transactions, dayOfCycle, streaks, owedItems, owedTotal,
+    limits, spentByCategory, goal, savings, cycleTx, transactions, dayOfCycle, streaks, owedItems, owedTotal, savedToPots,
   } = f;
 
   const cycleProgress = (dayOfCycle / cycle.totalDays) * 100;
@@ -39,6 +42,7 @@ function Home() {
     .map((l) => ({ ...l, pct: l.limit > 0 ? (l.spent / l.limit) * 100 : 0 }))
     .sort((a, b) => b.pct - a.pct);
   const warnings = limitRows.filter((l) => l.pct >= 80);
+  const openPots = pots.filter((p) => !p.closedAt);
 
   return (
     <Page>
@@ -78,13 +82,20 @@ function Home() {
       {/* Cycle numbers */}
       <div className="grid grid-cols-3 gap-3 mt-3">
         {[
-          ["Spent", formatINR(spent), "text-ink"],
-          ["Left", formatINR(balance), balance < 0 ? "text-neg" : "text-ink"],
-          ["Income", formatINR(income), income > 0 ? "text-pos" : "text-ink"],
-        ].map(([label, value, color]) => (
+          ["Spent", formatINR(spent), "text-ink", savedToPots > 0 ? `${formatINR(savedToPots)} saved` : null],
+          // Money owed back isn't yours to spend yet, so it's shown apart
+          ["Left", formatINR(balance), balance < 0 ? "text-neg" : "text-ink",
+            owedTotal > 0 ? `+${formatINR(owedTotal)} owed` : null],
+          ["Income", formatINR(income), income > 0 ? "text-pos" : "text-ink", null],
+        ].map(([label, value, color, extra]) => (
           <Card key={label} className="p-4">
             <p className="text-[13px] text-ink-3">{label}</p>
             <p className={`tabular text-[17px] font-semibold mt-1 truncate ${color}`}>{value}</p>
+            {extra && (
+              <p className={`tabular text-[11px] font-medium leading-tight mt-0.5 ${
+                label === "Spent" ? "text-accent-ink" : "text-warn"
+              }`}>{extra}</p>
+            )}
           </Card>
         ))}
       </div>
@@ -134,6 +145,45 @@ function Home() {
       )}
 
       {owedItems.length > 0 && <OwedCard items={owedItems} total={owedTotal} />}
+
+      {/* Savings pots (BC / chit) */}
+      {openPots.length > 0 && (
+        <Section title="Savings pots" action="Manage" to="/budget-goals">
+          <Card className="divide-y divide-line/60 overflow-hidden">
+            {openPots.map((p) => {
+              const s = potStats(p);
+              return (
+                <div key={p.id} className="px-4 py-3.5">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-full bg-surface-2 flex items-center justify-center shrink-0">
+                      <PiggyBank className="w-5 h-5 text-ink-2" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[15px] font-medium truncate">{p.name}</p>
+                      <p className="text-[13px] text-ink-3 truncate">
+                        {p.months > 0 ? `${p.payments} of ${p.months} months` : `${p.payments} ${p.payments === 1 ? "payment" : "payments"}`}
+                        {p.monthlyAmount > 0 && ` · ${formatINR(p.monthlyAmount)}/month`}
+                        {s.settling && ` · settling`}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className={`tabular text-[15px] font-semibold ${s.settling ? "text-warn" : ""}`}>
+                        {formatINR(s.settling ? s.toPay : s.paidIn)}
+                      </p>
+                      <p className="tabular text-[11px] text-ink-3">
+                        {s.settled ? "settled" : s.settling ? "left to pay" : s.target > 0 ? `of ${formatINR(s.target)}` : "saved"}
+                      </p>
+                    </div>
+                  </div>
+                  {s.target > 0 && (
+                    <ProgressBar value={s.progress} tone={s.settled ? "pos" : s.settling ? "warn" : "accent"} className="mt-2.5" />
+                  )}
+                </div>
+              );
+            })}
+          </Card>
+        </Section>
+      )}
 
       {/* Upcoming bills */}
       {nextBills.length > 0 && (

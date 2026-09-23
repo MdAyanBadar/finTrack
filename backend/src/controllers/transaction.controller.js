@@ -16,6 +16,7 @@ export const getTransactions = async (req, res) => {
     const transactions = await prisma.transaction.findMany({
       where: { userId: req.userId },
       orderBy: { date: "desc" },
+      include: { shares: { orderBy: { person: "asc" } } },
     });
 
     res.json(transactions);
@@ -33,6 +34,7 @@ export const createTransaction = async (req, res) => {
     const { title, amount, type, category, date } = req.body;
     const value = Number(amount);
     const owedBy = req.body.owedBy ? String(req.body.owedBy).trim().slice(0, 60) : null;
+    const potId = req.body.potId || null; // savings pot (BC/chit) this feeds
 
     if (!String(title ?? "").trim() || !String(category ?? "").trim())
       return res.status(400).json({ message: "Title and category are required" });
@@ -57,6 +59,7 @@ export const createTransaction = async (req, res) => {
         userId: req.userId,
         // Only an expense can be owed back to you
         owedBy: type === "expense" ? owedBy || null : null,
+        potId,
       },
     });
 
@@ -98,6 +101,7 @@ export const updateTransaction = async (req, res) => {
       // Keep the sign consistent with the type (expenses are negative)
       if (data.amount !== undefined) data.amount = type === "expense" ? -Math.abs(data.amount) : Math.abs(data.amount);
     }
+    if (req.body.potId !== undefined) data.potId = req.body.potId || null;
     if (req.body.owedBy !== undefined) {
       const owedBy = req.body.owedBy ? String(req.body.owedBy).trim().slice(0, 60) : null;
       if (owedBy && (data.type ?? "expense") === "income")

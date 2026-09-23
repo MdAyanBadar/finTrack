@@ -8,6 +8,8 @@ import { toast } from "../utils/toast";
 import { Page, PageHeader, Card, Sheet, Field, Input, Button, Skeleton } from "./ui";
 import RecurringManager from "./RecurringManager";
 import CategoryLimitsEditor from "./CategoryLimitsEditor";
+import SavingsPots from "./SavingsPots";
+import SplitGroups from "./SplitGroups";
 
 const ordinal = (n) => {
   const s = ["th", "st", "nd", "rd"];
@@ -104,6 +106,8 @@ function BudgetGoals() {
 
       <RecurringManager salaryDay={salaryDay} />
       <CategoryLimitsEditor />
+      <SavingsPots />
+      <SplitGroups />
 
       <Sheet open={Boolean(editing)} onClose={() => setEditing(null)} title={editing ? SETTINGS[editing].title : ""}>
         {editing && (

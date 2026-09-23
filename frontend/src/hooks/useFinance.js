@@ -29,10 +29,24 @@ export function useFinance() {
     // Money owed back to you (and its repayment when it arrives) is not your
     // own spending, so it stays out of every budget figure.
     const personal = transactions.filter((t) => !t.owedBy && !t.repaymentFor);
-    const owedItems = transactions
-      .filter((t) => t.owedBy && !t.settledAt)
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
-    const owedTotal = owedItems.reduce((a, t) => a + Math.abs(t.amount), 0);
+    // Someone owes you either a whole transaction, or their share of a split bill
+    const owedItems = [
+      ...transactions
+        .filter((t) => t.owedBy && !t.settledAt)
+        .map((t) => ({
+          key: t.id, txId: t.id, shareId: null, person: t.owedBy,
+          amount: Math.abs(t.amount), title: t.title, category: t.category, date: t.date,
+        })),
+      ...transactions.flatMap((t) =>
+        (t.shares ?? [])
+          .filter((s) => !s.settledAt)
+          .map((s) => ({
+            key: s.id, txId: t.id, shareId: s.id, person: s.person,
+            amount: s.amount, title: t.title, category: t.category, date: t.date, split: true,
+          }))
+      ),
+    ].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const owedTotal = owedItems.reduce((a, t) => a + t.amount, 0);
 
     const cycleTx = personal.filter((t) => isInCycle(t.date, cycle));
     const history = getCycleHistory(personal, salaryDay, now);
@@ -67,6 +81,11 @@ export function useFinance() {
       if (t.amount < 0) spentByCategory[t.category || "General"] = (spentByCategory[t.category || "General"] || 0) - t.amount;
     }
 
+    // Part of this cycle's spending that went into a savings pot (BC/chit)
+    const savedToPots = cycleTx
+      .filter((t) => t.amount < 0 && t.potId)
+      .reduce((a, t) => a - t.amount, 0);
+
     const savings = getSavedFromCycles(history, budget);
     const streaks = getStreaks(personal, salaryDay, budget, now);
 
@@ -75,7 +94,7 @@ export function useFinance() {
       transactions, personal, cycleTx, history, cycle, nextCycle, owedItems, owedTotal,
       budget, goal, salaryDay, recurring, limits,
       income, spent, balance, upcoming, afterSalary, upcomingDue, spendable,
-      dailyBudget, todaySpent, leftToday, spentByCategory, savings, streaks,
+      dailyBudget, todaySpent, leftToday, spentByCategory, savings, streaks, savedToPots,
       colorMap: categoryColorMap(personal),
       dayOfCycle: cycle.totalDays - cycle.remainingDays + 1,
     };

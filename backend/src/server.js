@@ -11,6 +11,8 @@ import userRoutes from "./routes/user.routes.js";
 import recurringRoutes from "./routes/recurring.routes.js";
 import ingestRoutes from "./routes/ingest.routes.js";
 import pushRoutes from "./routes/push.routes.js";
+import potRoutes from "./routes/pot.routes.js";
+import splitRoutes from "./routes/split.routes.js";
 
 const app = express();
 
@@ -58,6 +60,8 @@ app.use("/api/users", userRoutes);
 app.use("/api/recurring", recurringRoutes);
 app.use("/api/ingest", ingestRoutes);
 app.use("/api/push", pushRoutes);
+app.use("/api/pots", potRoutes);
+app.use("/api/split-groups", splitRoutes);
 
 /* ======================
    SERVER

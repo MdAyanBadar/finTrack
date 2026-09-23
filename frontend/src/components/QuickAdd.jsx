@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Zap } from "lucide-react";
 import api from "../api/api";
 import { useTransactions } from "../api/transactionStore";
+import { useResource } from "../api/resourceStore";
 import { knownCategories } from "../utils/categories";
 import { onQuickAdd } from "../utils/quickAdd";
 import { formatINR } from "../utils/format";
-import { Sheet, Segmented, Chip, Button, Field, inputClass } from "./ui";
+import { Sheet, Segmented, Chip, Button, Field, Select, inputClass } from "./ui";
 import PickOrAdd from "./PickOrAdd";
 
 // Title+amount+category combos logged at least twice, most frequent first
@@ -36,6 +37,7 @@ function QuickAdd() {
   const [category, setCategory] = useState("Food");
   const [custom, setCustom] = useState("");
   const [owedBy, setOwedBy] = useState("");
+  const [potId, setPotId] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [lastAdded, setLastAdded] = useState(null);
@@ -43,6 +45,9 @@ function QuickAdd() {
 
   const frequent = useMemo(() => frequentItems(transactions), [transactions]);
   const categories = knownCategories().filter((c) => c !== "General").slice(0, 7);
+  const { data: pots } = useResource("/pots", []);
+  const openPots = pots.filter((p) => !p.closedAt);
+
   // People who already owe you something
   const owedPeople = useMemo(
     () => [...new Set(transactions.filter((t) => t.owedBy).map((t) => t.owedBy))].sort(),
@@ -69,6 +74,7 @@ function QuickAdd() {
     setTitle("");
     setCustom("");
     setOwedBy("");
+    setPotId("");
     setType("expense");
   };
 
@@ -82,6 +88,7 @@ function QuickAdd() {
       category: item.category,
       date: new Date().toISOString(),
       ...(item.owedBy && item.type === "expense" && { owedBy: item.owedBy }),
+      ...(item.potId && item.type === "expense" && { potId: item.potId }),
     };
     try {
       setSaving(true);
@@ -115,7 +122,7 @@ function QuickAdd() {
   const onSubmit = (e) => {
     e.preventDefault();
     if (!finalCategory) return;
-    submit({ title, amount, type, category: finalCategory, owedBy: owedBy.trim() });
+    submit({ title, amount, type, category: finalCategory, owedBy: owedBy.trim(), potId });
   };
 
   return (
@@ -188,6 +195,14 @@ function QuickAdd() {
                 <PickOrAdd value={owedBy} options={owedPeople} allowEmpty emptyLabel="Nobody — my own spending"
                   newLabel="Someone else…" placeholder="Acme, Rahul…" onChange={setOwedBy} />
               </Field>
+              {openPots.length > 0 && (
+                <Field label="Savings pot" hint="For a BC / chit payment or money put aside.">
+                  <Select value={potId} onChange={(e) => setPotId(e.target.value)}>
+                    <option value="">Not savings</option>
+                    {openPots.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </Select>
+                </Field>
+              )}
             </div>
           )}
 

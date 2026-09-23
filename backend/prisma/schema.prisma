@@ -20,6 +20,8 @@ model User {
   categoryBudgets CategoryBudget[]
   recurring       RecurringTransaction[]
   payeeRules      PayeeRule[]
+  pots            SavingsPot[]
+  splitGroups     SplitGroup[]
   pushSubs        PushSubscription[]
   notifications   NotificationLog[]
 }
@@ -40,9 +42,13 @@ model Transaction {
   settledAt    DateTime? // when they paid you back
   repaymentFor String? // set on the income entry that repays another transaction
   externalRef  String? // bank reference (RRN/UPI ref) or text hash, for de-duplication
+  potId        String? // paid into a savings pot (BC/chit), or the payout from one
+  splitId      String? // legacy: older splits made sibling rows
 
   user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   recurring RecurringTransaction? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  pot       SavingsPot?           @relation(fields: [potId], references: [id], onDelete: SetNull)
+  shares    TransactionShare[]
 
   @@unique([recurringId, date])
   @@unique([userId, externalRef])
@@ -86,7 +92,10 @@ model RecurringTransaction {
   lastPosted DateTime?
   createdAt  DateTime  @default(now())
 
+  potId String? // a monthly BC/chit payment feeds this pot
+
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pot          SavingsPot?   @relation(fields: [potId], references: [id], onDelete: SetNull)
   transactions Transaction[]
 }
 
@@ -125,4 +134,48 @@ model NotificationLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, key])
+}
+
+// A savings pot: a BC/chit group, or any "put money aside" pot.
+// Payments into it still count as money leaving your account; the pot shows
+// how much of your spending was actually saved.
+model SavingsPot {
+  id            String    @id @default(uuid())
+  userId        String
+  name          String
+  monthlyAmount Float? // what you pay in each month, if fixed
+  months        Int? // how many months it runs (a 12-month BC, say)
+  closedAt      DateTime? // when you received the pot
+  createdAt     DateTime  @default(now())
+
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  recurring    RecurringTransaction[]
+}
+
+// A group of people you split bills with ("Goa trip", "Flatmates")
+model SplitGroup {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  members   String[] // just names; they don't need accounts
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// One person's share of a split bill. The bill stays a single transaction
+// holding your own share; everyone else's share lives here until they pay you.
+model TransactionShare {
+  id            String    @id @default(uuid())
+  transactionId String
+  person        String
+  amount        Float // what they owe you
+  settledAt     DateTime?
+  repaymentId   String? // the income entry created when they paid
+  createdAt     DateTime  @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
 }
