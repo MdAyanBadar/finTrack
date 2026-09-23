@@ -2,14 +2,17 @@ import { useState } from "react";
 import { Gauge, Plus } from "lucide-react";
 import api from "../api/api";
 import { useResource } from "../api/resourceStore";
-import { knownCategories } from "../utils/categories";
+import { allCategories } from "../utils/categories";
+import { useTransactions } from "../api/transactionStore";
 import { formatINR } from "../utils/format";
 import { toast } from "../utils/toast";
 import { Card, Section, Sheet, Field, Input, Button, EmptyState } from "./ui";
+import PickOrAdd from "./PickOrAdd";
 
 // Spending limit per category for each pay cycle
 function CategoryLimitsEditor() {
   const { data: limits, setData: setLimits } = useResource("/budget/categories", []);
+  const { transactions } = useTransactions();
   const [form, setForm] = useState(null); // { original?, category, limit }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -84,9 +87,9 @@ function CategoryLimitsEditor() {
         {form && (
           <div className="space-y-4">
             <Field label="Category">
-              <Input list="limit-categories" placeholder="Food" value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })} />
-              <datalist id="limit-categories">{knownCategories().map((c) => <option key={c} value={c} />)}</datalist>
+              <PickOrAdd value={form.category} options={allCategories(transactions)}
+                newLabel="New category…" placeholder="Category name"
+                onChange={(v) => setForm({ ...form, category: v })} />
             </Field>
             <Field label="Limit per pay cycle (₹)">
               <Input type="number" inputMode="decimal" min="1" value={form.limit}

@@ -6,7 +6,8 @@ import { useTransactions } from "../api/transactionStore";
 import { knownCategories } from "../utils/categories";
 import { onQuickAdd } from "../utils/quickAdd";
 import { formatINR } from "../utils/format";
-import { Sheet, Segmented, Chip, Button, inputClass } from "./ui";
+import { Sheet, Segmented, Chip, Button, Field, inputClass } from "./ui";
+import PickOrAdd from "./PickOrAdd";
 
 // Title+amount+category combos logged at least twice, most frequent first
 const frequentItems = (transactions) => {
@@ -42,6 +43,11 @@ function QuickAdd() {
 
   const frequent = useMemo(() => frequentItems(transactions), [transactions]);
   const categories = knownCategories().filter((c) => c !== "General").slice(0, 7);
+  // People who already owe you something
+  const owedPeople = useMemo(
+    () => [...new Set(transactions.filter((t) => t.owedBy).map((t) => t.owedBy))].sort(),
+    [transactions]
+  );
 
   useEffect(() => onQuickAdd(() => setOpen(true)), []);
 
@@ -177,8 +183,12 @@ function QuickAdd() {
 
           {/* Work expense or money lent: kept out of the budget until repaid */}
           {type === "expense" && (
-            <input placeholder="Who owes you this back? (optional)" aria-label="Owed back by" value={owedBy}
-              onChange={(e) => setOwedBy(e.target.value)} className={`${inputClass} mb-6`} />
+            <div className="mb-6">
+              <Field label="Owed back by">
+                <PickOrAdd value={owedBy} options={owedPeople} allowEmpty emptyLabel="Nobody — my own spending"
+                  newLabel="Someone else…" placeholder="Acme, Rahul…" onChange={setOwedBy} />
+              </Field>
+            </div>
           )}
 
           <Button type="submit" size="lg" className="w-full" disabled={saving || !(Number(amount) > 0) || !finalCategory}>

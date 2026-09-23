@@ -26,3 +26,7 @@ export const categoryColorMap = (transactions) => {
   const ranked = Object.entries(totals).sort((a, b) => b[1] - a[1]).map(([c]) => c);
   return Object.fromEntries(ranked.map((c, i) => [c, SERIES_COLORS[i] ?? OTHER_COLOR]));
 };
+
+// Every category you've actually used, plus the defaults
+export const allCategories = (transactions = []) =>
+  [...new Set([...knownCategories(), ...transactions.map((t) => t.category).filter(Boolean)])].sort();

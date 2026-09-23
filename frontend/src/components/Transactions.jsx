@@ -5,7 +5,7 @@ import { useTransactions, deleteWithUndo } from "../api/transactionStore";
 import { toast } from "../utils/toast";
 import { useResource } from "../api/resourceStore";
 import { getPayCycle, isInCycle, toDateKey } from "../utils/payCycle";
-import { knownCategories } from "../utils/categories";
+import { allCategories } from "../utils/categories";
 import { formatINR, dayLabel } from "../utils/format";
 import { openQuickAdd } from "../utils/quickAdd";
 import {
@@ -13,6 +13,7 @@ import {
 } from "./ui";
 import TransactionRow from "./TransactionRow";
 import SwipeRow from "./SwipeRow";
+import PickOrAdd from "./PickOrAdd";
 
 const PERIODS = [
   { value: "cycle", label: "This cycle" },
@@ -286,11 +287,9 @@ function Transactions() {
               <Input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
             </Field>
             <Field label="Category">
-              <Input list="edit-categories" value={editing.category}
-                onChange={(e) => setEditing({ ...editing, category: e.target.value })} />
-              <datalist id="edit-categories">
-                {knownCategories(categories).map((c) => <option key={c} value={c} />)}
-              </datalist>
+              <PickOrAdd value={editing.category} options={allCategories(transactions)}
+                newLabel="New category…" placeholder="Category name"
+                onChange={(v) => setEditing({ ...editing, category: v })} />
             </Field>
             {categoryChanged && (
               <label className="flex items-start gap-3 p-3 rounded-2xl bg-surface-2 cursor-pointer">
@@ -305,12 +304,10 @@ function Transactions() {
             )}
             {/* Work expense / money lent: stays out of the budget until repaid */}
             {editing.type === "expense" && !editing.settledAt && (
-              <Field label="Owed back by (optional)" hint="A work expense to claim, or money you lent. It won't count against your budget until it's repaid.">
-                <Input list="owed-people" placeholder="Acme, Rahul…" value={editing.owedBy}
-                  onChange={(e) => setEditing({ ...editing, owedBy: e.target.value })} />
-                <datalist id="owed-people">
-                  {owedPeople.map((p) => <option key={p} value={p} />)}
-                </datalist>
+              <Field label="Owed back by" hint="A work expense to claim, or money you lent. It won't count against your budget until it's repaid.">
+                <PickOrAdd value={editing.owedBy} options={owedPeople} allowEmpty emptyLabel="Nobody — my own spending"
+                  newLabel="Someone else…" placeholder="Acme, Rahul…"
+                  onChange={(v) => setEditing({ ...editing, owedBy: v })} />
               </Field>
             )}
             {editing.owedBy && !editing.settledAt && (

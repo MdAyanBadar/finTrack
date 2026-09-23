@@ -3,11 +3,12 @@ import { Repeat, Plus } from "lucide-react";
 import api from "../api/api";
 import { useResource } from "../api/resourceStore";
 import { loadTransactions, useTransactions } from "../api/transactionStore";
-import { knownCategories } from "../utils/categories";
+import { allCategories } from "../utils/categories";
 import { getPayCycle, missedThisCycle, toDateKey } from "../utils/payCycle";
 import { formatINR, shortDate } from "../utils/format";
 import { toast } from "../utils/toast";
 import { Card, Section, Sheet, Segmented, Field, Input, Select, Button, EmptyState } from "./ui";
+import PickOrAdd from "./PickOrAdd";
 
 const ordinal = (n) => {
   const s = ["th", "st", "nd", "rd"];
@@ -172,8 +173,9 @@ function RecurringManager({ salaryDay = 1 }) {
               <Field label="Day of month"><Input type="number" inputMode="numeric" min="1" max="31" placeholder="1–31" value={form.dayOfMonth} onChange={set("dayOfMonth")} /></Field>
             </div>
             <Field label="Category">
-              <Input list="recurring-categories" value={form.category} onChange={set("category")} />
-              <datalist id="recurring-categories">{knownCategories().map((c) => <option key={c} value={c} />)}</datalist>
+              <PickOrAdd value={form.category} options={allCategories(transactions)}
+                newLabel="New category…" placeholder="Category name"
+                onChange={(v) => setForm((f) => ({ ...f, category: v }))} />
             </Field>
             <Field label="Repeats">
               <Select value={form.repeat} onChange={set("repeat")}>
